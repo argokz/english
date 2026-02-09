@@ -58,17 +58,17 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) {
         final c = TextEditingController();
         return AlertDialog(
-          title: const Text('New deck'),
+          title: const Text('Новая колода'),
           content: TextField(
             controller: c,
-            decoration: const InputDecoration(labelText: 'Name'),
+            decoration: const InputDecoration(labelText: 'Название'),
             autofocus: true,
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
             FilledButton(
-              onPressed: () => Navigator.pop(ctx, c.text.trim().isEmpty ? 'Deck' : c.text.trim()),
-              child: const Text('Create'),
+              onPressed: () => Navigator.pop(ctx, c.text.trim().isEmpty ? 'Колода' : c.text.trim()),
+              child: const Text('Создать'),
             ),
           ],
         );
@@ -79,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await context.read<AuthProvider>().api.createDeck(name);
       _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
   }
 
@@ -90,14 +90,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Decks')),
+        appBar: AppBar(title: const Text('Колоды')),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Retry')),
+              FilledButton(onPressed: _load, child: const Text('Повторить')),
             ],
           ),
         ),
@@ -106,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final decks = _decks ?? [];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Decks'),
+        title: const Text('Колоды'),
         actions: [
           IconButton(icon: const Icon(Icons.add), onPressed: _createDeck),
           IconButton(icon: const Icon(Icons.settings), onPressed: () => context.go('/settings')),
@@ -123,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return Card(
               child: ListTile(
                 title: Text(d.name),
-                subtitle: Text('$due due today'),
+                subtitle: Text('$due на сегодня'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

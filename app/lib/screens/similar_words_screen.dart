@@ -50,18 +50,18 @@ class _SimilarWordsScreenState extends State<SimilarWordsScreen> {
             example: sw.example,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${sw.word}')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Добавлено: ${sw.word}')));
         setState(() => _results = _results?.where((e) => e.cardId != sw.cardId).toList());
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Similar words')),
+      appBar: AppBar(title: const Text('Похожие слова')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -72,18 +72,18 @@ class _SimilarWordsScreenState extends State<SimilarWordsScreen> {
                 Expanded(
                   child: TextField(
                     controller: _wordController,
-                    decoration: const InputDecoration(hintText: 'Enter word', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(hintText: 'Введите слово', border: OutlineInputBorder()),
                     onSubmitted: (_) => _search(),
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(onPressed: _loading ? null : _search, child: const Text('Search')),
+                FilledButton(onPressed: _loading ? null : _search, child: const Text('Искать')),
               ],
             ),
             const SizedBox(height: 16),
             if (_loading) const Center(child: CircularProgressIndicator()),
             if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-            if (_results != null && _results!.isEmpty) const Text('No similar words found or no embeddings yet. Add more words first.'),
+            if (_results != null && _results!.isEmpty) const Text('Похожих слов не найдено или ещё нет эмбеддингов. Добавьте слова в колоду.'),
             if (_results != null && _results!.isNotEmpty)
               Expanded(
                 child: ListView.builder(

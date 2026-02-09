@@ -74,7 +74,7 @@ class _DeckScreenState extends State<DeckScreen> {
                     children: [
                       Text(_error!),
                       const SizedBox(height: 16),
-                      FilledButton(onPressed: _load, child: const Text('Retry')),
+                      FilledButton(onPressed: _load, child: const Text('Повторить')),
                     ],
                   ),
                 )
@@ -97,7 +97,7 @@ class _DeckScreenState extends State<DeckScreen> {
                                 _load();
                               } catch (e) {
                                 if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
                                 }
                               }
                             },
@@ -122,7 +122,7 @@ class _DeckScreenState extends State<DeckScreen> {
               _load();
             },
             icon: const Icon(Icons.add),
-            label: const Text('Add word'),
+            label: const Text('Добавить слово'),
           ),
           const SizedBox(height: 8),
           FloatingActionButton.extended(
@@ -137,7 +137,7 @@ class _DeckScreenState extends State<DeckScreen> {
               _load();
             },
             icon: const Icon(Icons.auto_awesome),
-            label: const Text('Generate words'),
+            label: const Text('Сгенерировать слова'),
           ),
           const SizedBox(height: 8),
           FloatingActionButton.extended(
@@ -152,7 +152,7 @@ class _DeckScreenState extends State<DeckScreen> {
               _load();
             },
             icon: const Icon(Icons.lightbulb_outline),
-            label: const Text('Similar words'),
+            label: const Text('Похожие слова'),
           ),
         ],
       ),

@@ -29,11 +29,11 @@ class _GenerateWordsScreenState extends State<GenerateWordsScreen> {
             count: _count,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Created $created cards')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Добавлено карточек: $created')));
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
     setState(() => _loading = false);
   }
@@ -41,13 +41,13 @@ class _GenerateWordsScreenState extends State<GenerateWordsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Generate words')),
+      appBar: AppBar(title: const Text('Сгенерировать слова')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('CEFR level'),
+            const Text('Уровень CEFR'),
             DropdownButton<String>(
               value: _level,
               items: levels.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
@@ -56,18 +56,18 @@ class _GenerateWordsScreenState extends State<GenerateWordsScreen> {
             const SizedBox(height: 16),
             TextField(
               decoration: const InputDecoration(
-                labelText: 'Or topic (e.g. business, travel)',
+                labelText: 'Или тема (напр. бизнес, путешествия)',
                 border: OutlineInputBorder(),
               ),
               onChanged: (v) => setState(() => _topic = v),
             ),
             const SizedBox(height: 16),
-            Text('Count: $_count'),
+            Text('Количество: $_count'),
             Slider(value: _count.toDouble(), min: 5, max: 50, divisions: 9, label: '$_count', onChanged: (v) => setState(() => _count = v.round())),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _loading ? null : _generate,
-              child: _loading ? const SizedBox(height: 24, child: Center(child: CircularProgressIndicator(strokeWidth: 2))) : const Text('Generate'),
+              child: _loading ? const SizedBox(height: 24, child: Center(child: CircularProgressIndicator(strokeWidth: 2))) : const Text('Сгенерировать'),
             ),
           ],
         ),

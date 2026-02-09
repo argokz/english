@@ -27,7 +27,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
       _translationController.text = result['translation'] ?? '';
       _exampleController.text = result['example'] ?? '';
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Enrich failed: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка подсказки: $e')));
     }
     setState(() => _enriching = false);
   }
@@ -36,7 +36,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
     final word = _wordController.text.trim();
     final translation = _translationController.text.trim();
     if (word.isEmpty || translation.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Word and translation required')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Введите слово и перевод')));
       return;
     }
     setState(() => _loading = true);
@@ -48,11 +48,11 @@ class _AddWordScreenState extends State<AddWordScreen> {
             example: _exampleController.text.trim().isEmpty ? null : _exampleController.text.trim(),
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сохранено')));
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
     setState(() => _loading = false);
   }
@@ -60,7 +60,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add word')),
+      appBar: AppBar(title: const Text('Добавить слово')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: SingleChildScrollView(
@@ -68,7 +68,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
             children: [
               TextField(
                 controller: _wordController,
-                decoration: const InputDecoration(labelText: 'Word (English)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Слово (англ.)', border: OutlineInputBorder()),
                 textCapitalization: TextCapitalization.none,
               ),
               const SizedBox(height: 12),
@@ -77,26 +77,26 @@ class _AddWordScreenState extends State<AddWordScreen> {
                   Expanded(
                     child: TextField(
                       controller: _translationController,
-                      decoration: const InputDecoration(labelText: 'Translation', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(labelText: 'Перевод', border: OutlineInputBorder()),
                     ),
                   ),
                   const SizedBox(width: 8),
                   FilledButton.tonal(
                     onPressed: _enriching ? null : _enrich,
-                    child: _enriching ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Enrich'),
+                    child: _enriching ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Подсказать'),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _exampleController,
-                decoration: const InputDecoration(labelText: 'Example (optional)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Пример (необяз.)', border: OutlineInputBorder()),
                 maxLines: 2,
               ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _loading ? null : _save,
-                child: _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
+                child: _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Сохранить'),
               ),
             ],
           ),

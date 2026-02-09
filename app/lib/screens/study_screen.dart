@@ -58,7 +58,7 @@ class _StudyScreenState extends State<StudyScreen> {
         _showBack = false;
       });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
   }
 
@@ -79,7 +79,7 @@ class _StudyScreenState extends State<StudyScreen> {
             children: [
               Text(_error!),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Retry')),
+              FilledButton(onPressed: _load, child: const Text('Повторить')),
             ],
           ),
         ),
@@ -88,12 +88,12 @@ class _StudyScreenState extends State<StudyScreen> {
     if (_queue == null || _queue!.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.deckName)),
-        body: const Center(child: Text('No cards due today. Great job!')),
+        body: const Center(child: Text('На сегодня карточек нет. Отлично!')),
       );
     }
     final card = _queue![_index];
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.deckName} (${_queue!.length} left)')),
+      appBar: AppBar(title: Text('${widget.deckName} (осталось ${_queue!.length})')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -126,18 +126,18 @@ class _StudyScreenState extends State<StudyScreen> {
               ),
               const Spacer(),
               if (_showBack) ...[
-                const Text('How did you do?'),
+                const Text('Как вспомнили?'),
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     FilledButton.tonal(
                       onPressed: () => _rate(1),
-                      child: const Text('Again'),
+                      child: const Text('Забыл'),
                     ),
-                    FilledButton.tonal(onPressed: () => _rate(2), child: const Text('Hard')),
-                    FilledButton(onPressed: () => _rate(3), child: const Text('Good')),
-                    FilledButton(onPressed: () => _rate(4), child: const Text('Easy')),
+                    FilledButton.tonal(onPressed: () => _rate(2), child: const Text('Сложно')),
+                    FilledButton(onPressed: () => _rate(3), child: const Text('Нормально')),
+                    FilledButton(onPressed: () => _rate(4), child: const Text('Легко')),
                   ],
                 ),
               ],

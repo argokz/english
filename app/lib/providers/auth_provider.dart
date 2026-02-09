@@ -53,7 +53,7 @@ class AuthProvider with ChangeNotifier {
   /// Native Google Sign-In (uses id_token and backend /auth/google/token). Returns error message or null on success.
   Future<String?> signInWithGoogle() async {
     if (kGoogleWebClientId.isEmpty) {
-      return 'Google Web Client ID not set (see lib/core/constants.dart)';
+      return 'Не задан Google Web Client ID (lib/core/constants.dart)';
     }
     try {
       final googleSignIn = GoogleSignIn(
@@ -61,14 +61,14 @@ class AuthProvider with ChangeNotifier {
         scopes: ['email', 'profile', 'openid'],
       );
       final account = await googleSignIn.signIn();
-      if (account == null) return null; // user cancelled
+      if (account == null) return null; // пользователь отменил
       final auth = await account.authentication;
       final idToken = auth.idToken;
       if (idToken == null || idToken.isEmpty) {
-        return 'No ID token from Google';
+        return 'Google не вернул токен';
       }
       final result = await api.loginWithGoogleIdToken(idToken);
-      if (result == null) return 'Backend login failed';
+      if (result == null) return 'Ошибка входа на сервере';
       await saveFromCallback(result);
       await googleSignIn.signOut(); // we only needed the token
       return null;
