@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
@@ -15,6 +16,29 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   String? _error;
   bool _loading = false;
+  String? _pingResult;
+
+  Future<void> _checkServer() async {
+    setState(() {
+      _pingResult = null;
+      _error = null;
+    });
+    final api = context.read<AuthProvider>().api;
+    final uri = Uri.parse('${api.baseUrl}health');
+    try {
+      await api.getHealth();
+      if (mounted) setState(() => _pingResult = 'OK: $uri');
+    } on DioException catch (e) {
+      if (mounted) {
+        setState(() {
+          _pingResult = 'Ошибка: ${e.type}\n${e.message}\nURL: $uri';
+          if (e.response != null) {
+            _pingResult = '$_pingResult\nКод: ${e.response!.statusCode}';
+          }
+        });
+      }
+    }
+  }
 
   Future<void> _signInWithGoogle() async {
     setState(() {
@@ -42,7 +66,18 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text('English Words', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               const Text('Учите слова с интервальным повторением', style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 48),
+              const SizedBox(height: 24),
+              Text('Сервер: $kBaseUrl', style: TextStyle(fontSize: 11, color: Colors.grey[600]), textAlign: TextAlign.center),
+              TextButton.icon(
+                icon: const Icon(Icons.wifi_find, size: 18),
+                label: const Text('Проверить соединение'),
+                onPressed: _checkServer,
+              ),
+              if (_pingResult != null) ...[
+                const SizedBox(height: 8),
+                SelectableText(_pingResult!, style: const TextStyle(fontSize: 12), textAlign: TextAlign.center),
+              ],
+              const SizedBox(height: 24),
               FilledButton.icon(
                 onPressed: _loading ? null : _signInWithGoogle,
                 icon: _loading
