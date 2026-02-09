@@ -23,6 +23,8 @@ class Card(Base):
     word: Mapped[str] = mapped_column(String(255), nullable=False)
     translation: Mapped[str] = mapped_column(String(512), nullable=False)
     example: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcription: Mapped[str | None] = mapped_column(String(100), nullable=True)  # IPA transcription
+    pronunciation_url: Mapped[str | None] = mapped_column(String(512), nullable=True)  # URL to audio file
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     state: Mapped[str] = mapped_column(String(32), nullable=False, default=CardState.learning.value)

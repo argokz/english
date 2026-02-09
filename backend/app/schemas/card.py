@@ -7,12 +7,16 @@ class CardCreate(BaseModel):
     word: str
     translation: str
     example: str | None = None
+    transcription: str | None = None
+    pronunciation_url: str | None = None
 
 
 class CardUpdate(BaseModel):
     word: str | None = None
     translation: str | None = None
     example: str | None = None
+    transcription: str | None = None
+    pronunciation_url: str | None = None
 
 
 class CardResponse(BaseModel):
@@ -21,6 +25,8 @@ class CardResponse(BaseModel):
     word: str
     translation: str
     example: str | None
+    transcription: str | None = None
+    pronunciation_url: str | None = None
     created_at: datetime
     state: str
     due: datetime

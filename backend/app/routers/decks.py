@@ -100,7 +100,12 @@ async def create_card(
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
     embedding = gemini_service.get_embedding(f"{body.word}: {body.translation}") if body.word else None
-    card = await card_repo.create_card(db, deck_id, body.word, body.translation, body.example, embedding=embedding)
+    card = await card_repo.create_card(
+        db, deck_id, body.word, body.translation, body.example, 
+        embedding=embedding,
+        transcription=body.transcription,
+        pronunciation_url=body.pronunciation_url,
+    )
     await db.commit()
     return card
 

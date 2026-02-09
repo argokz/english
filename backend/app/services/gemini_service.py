@@ -11,7 +11,8 @@ genai.configure(api_key=os.environ.get("GEMINI_API_KEY") or settings.gemini_api_
 
 
 def _model():
-    return genai.GenerativeModel("gemini-1.5-flash")
+    model_name = settings.gemini_model or "gemini-1.5-flash"
+    return genai.GenerativeModel(model_name)
 
 
 def generate_word_list(level: str | None = None, topic: str | None = None, count: int = 20) -> list[dict[str, str]]:
@@ -44,23 +45,40 @@ Do not add numbering or extra text. Only lines in format: word | translation | e
 
 
 def enrich_word(word: str) -> dict[str, str]:
-    """Get translation and example for one word. Returns {translation, example}."""
+    """Get translation, example, and transcription for one word. Returns {translation, example, transcription}."""
     prompt = f"""For the English word "{word}" provide:
 1) Russian translation (one word or short phrase)
 2) One short example sentence in English using this word.
+3) IPA phonetic transcription in square brackets (e.g., [ˈæpl])
 
-Reply in JSON only: {{"translation": "...", "example": "..."}}"""
+Reply in JSON only: {{"translation": "...", "example": "...", "transcription": "..."}}"""
 
     response = _model().generate_content(prompt)
     text = (response.text or "").strip()
     # Extract JSON from response (may be wrapped in markdown)
-    m = re.search(r"\{[^{}]*\"translation\"[^{}]*\"example\"[^{}]*\}", text)
+    m = re.search(r"\{[^{}]*\"translation\"[^{}]*\"example\"[^{}]*\"transcription\"[^{}]*\}", text)
     if m:
         try:
-            return json.loads(m.group())
+            result = json.loads(m.group())
+            # Clean transcription - remove brackets if present
+            if "transcription" in result and result["transcription"]:
+                result["transcription"] = result["transcription"].strip("[]")
+            return result
         except json.JSONDecodeError:
             pass
-    return {"translation": "", "example": ""}
+    return {"translation": "", "example": "", "transcription": ""}
+
+
+def get_pronunciation_url(word: str) -> str | None:
+    """Generate pronunciation URL using Google TTS API. Returns URL or None."""
+    try:
+        # Use Google TTS API for pronunciation
+        # Format: https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={word}
+        import urllib.parse
+        encoded_word = urllib.parse.quote(word)
+        return f"https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q={encoded_word}"
+    except Exception:
+        return None
 
 
 def get_embedding(text: str) -> list[float] | None:

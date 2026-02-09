@@ -38,8 +38,17 @@ async def create_card(
     translation: str,
     example: str | None = None,
     embedding: list[float] | None = None,
+    transcription: str | None = None,
+    pronunciation_url: str | None = None,
 ) -> Card:
-    card = Card(deck_id=deck_id, word=word, translation=translation, example=example)
+    card = Card(
+        deck_id=deck_id, 
+        word=word, 
+        translation=translation, 
+        example=example,
+        transcription=transcription,
+        pronunciation_url=pronunciation_url,
+    )
     if embedding is not None:
         card.embedding = embedding
     session.add(card)

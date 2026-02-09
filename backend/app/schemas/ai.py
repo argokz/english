@@ -15,6 +15,8 @@ class EnrichWordRequest(BaseModel):
 class EnrichWordResponse(BaseModel):
     translation: str
     example: str
+    transcription: str | None = None
+    pronunciation_url: str | None = None
 
 
 class SimilarWordItem(BaseModel):

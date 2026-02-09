@@ -47,10 +47,14 @@ async def enrich_word(
 ):
     if not body.word.strip():
         raise HTTPException(status_code=400, detail="word is required")
-    result = gemini_service.enrich_word(body.word.strip())
+    word = body.word.strip()
+    result = gemini_service.enrich_word(word)
+    pronunciation_url = gemini_service.get_pronunciation_url(word)
     return EnrichWordResponse(
         translation=result.get("translation", ""),
         example=result.get("example", ""),
+        transcription=result.get("transcription", ""),
+        pronunciation_url=pronunciation_url,
     )
 
 
