@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,14 @@ import '../providers/auth_provider.dart';
 import '../api/api_client.dart';
 import 'deck_screen.dart';
 import 'study_screen.dart';
+
+String _errorMessage(dynamic e) {
+  if (e is DioException && e.response?.data is Map) {
+    final detail = e.response!.data['detail'];
+    if (detail != null) return detail is String ? detail : detail.toString();
+  }
+  return e.toString();
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -46,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = _errorMessage(e);
         _loading = false;
       });
     }
@@ -79,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await context.read<AuthProvider>().api.createDeck(name);
       _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: ${_errorMessage(e)}')));
     }
   }
 
