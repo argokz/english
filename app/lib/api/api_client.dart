@@ -158,4 +158,13 @@ class ApiClient {
     final r = await _dio.get<List>('ai/similar-words', queryParameters: q);
     return (r.data ?? []).map((e) => SimilarWord.fromJson(e as Map<String, dynamic>)).toList();
   }
+
+  /// Backfill transcription and pronunciation for cards that don't have them.
+  Future<int> backfillTranscriptions({String? deckId, int limit = 50}) async {
+    final r = await _dio.post<Map<String, dynamic>>('ai/backfill-transcriptions', data: {
+      if (deckId != null) 'deck_id': deckId,
+      'limit': limit,
+    });
+    return r.data!['updated'] as int;
+  }
 }

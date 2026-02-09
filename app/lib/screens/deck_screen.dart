@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../models/card.dart' as app;
 import '../providers/auth_provider.dart';
 import 'add_word_screen.dart';
@@ -21,6 +22,26 @@ class _DeckScreenState extends State<DeckScreen> {
   List<app.CardModel>? _cards;
   bool _loading = true;
   String? _error;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _playWord(app.CardModel card) async {
+    try {
+      if (card.pronunciationUrl != null && card.pronunciationUrl!.isNotEmpty) {
+        await _audioPlayer.play(UrlSource(card.pronunciationUrl!));
+      } else {
+        final url = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${Uri.encodeComponent(card.word)}';
+        await _audioPlayer.play(UrlSource(url));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка воспроизведения: $e')));
+    }
+  }
 
   @override
   void initState() {
@@ -63,6 +84,39 @@ class _DeckScreenState extends State<DeckScreen> {
               ),
             ),
           ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) async {
+              if (value == 'backfill') {
+                final api = context.read<AuthProvider>().api;
+                if (!mounted) return;
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => const Center(child: CircularProgressIndicator()),
+                );
+                try {
+                  final updated = await api.backfillTranscriptions(deckId: widget.deckId, limit: 100);
+                  if (!mounted) return;
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Обновлено карточек: $updated')),
+                  );
+                  _load();
+                } catch (e) {
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Ошибка: $e')),
+                    );
+                  }
+                }
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'backfill', child: Text('Обновить транскрипции')),
+            ],
+          ),
         ],
       ),
       body: _loading
@@ -88,19 +142,37 @@ class _DeckScreenState extends State<DeckScreen> {
                       return Card(
                         child: ListTile(
                           title: Text(c.word),
-                          subtitle: Text(c.translation),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () async {
-                              try {
-                                await context.read<AuthProvider>().api.deleteCard(c.id);
-                                _load();
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
-                                }
-                              }
-                            },
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(c.translation),
+                              if (c.transcription != null && c.transcription!.isNotEmpty)
+                                Text('/${c.transcription}/', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey[600])),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.volume_up, size: 22),
+                                onPressed: () => _playWord(c),
+                                tooltip: 'Произношение',
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () async {
+                                  try {
+                                    await context.read<AuthProvider>().api.deleteCard(c.id);
+                                    _load();
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+                                    }
+                                  }
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       );

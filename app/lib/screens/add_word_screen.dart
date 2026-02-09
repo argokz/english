@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../providers/auth_provider.dart';
 
 class AddWordScreen extends StatefulWidget {
@@ -17,9 +18,31 @@ class _AddWordScreenState extends State<AddWordScreen> {
   final _exampleController = TextEditingController();
   bool _loading = false;
   bool _enriching = false;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   String? _transcription;
   String? _pronunciationUrl;
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _playWord() async {
+    final word = _wordController.text.trim();
+    if (word.isEmpty) return;
+    try {
+      if (_pronunciationUrl != null && _pronunciationUrl!.isNotEmpty) {
+        await _audioPlayer.play(UrlSource(_pronunciationUrl!));
+      } else {
+        final url = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${Uri.encodeComponent(word)}';
+        await _audioPlayer.play(UrlSource(url));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка воспроизведения: $e')));
+    }
+  }
 
   Future<void> _enrich() async {
     final word = _wordController.text.trim();
@@ -73,11 +96,31 @@ class _AddWordScreenState extends State<AddWordScreen> {
         child: SingleChildScrollView(
           child: Column(
             children: [
-              TextField(
-                controller: _wordController,
-                decoration: const InputDecoration(labelText: 'Слово (англ.)', border: OutlineInputBorder()),
-                textCapitalization: TextCapitalization.none,
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _wordController,
+                      decoration: const InputDecoration(labelText: 'Слово (англ.)', border: OutlineInputBorder()),
+                      textCapitalization: TextCapitalization.none,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.volume_up),
+                    onPressed: _playWord,
+                    tooltip: 'Произношение',
+                  ),
+                ],
               ),
+              if (_transcription != null && _transcription!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text('Транскрипция: ', style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+                    Text('/$_transcription/', style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 16)),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [

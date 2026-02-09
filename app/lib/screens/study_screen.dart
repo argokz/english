@@ -220,17 +220,17 @@ class _StudyScreenState extends State<StudyScreen> {
                         style: Theme.of(context).textTheme.headlineLarge,
                         textAlign: TextAlign.center,
                       ),
-                      if (showTranscription && card.transcription != null) ...[
+                      if (showTranscription && (card.transcription != null && card.transcription!.isNotEmpty)) ...[
                         const SizedBox(height: 8),
                         Text(
-                          '[${card.transcription}]',
+                          '/${card.transcription}/',
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             fontStyle: FontStyle.italic,
                             color: Colors.grey[600],
                           ),
                         ),
                       ],
-                      if (currentMode == StudyMode.englishToRussian && card.pronunciationUrl != null) ...[
+                      if (currentMode == StudyMode.englishToRussian) ...[
                         const SizedBox(height: 12),
                         IconButton(
                           icon: const Icon(Icons.volume_up),
@@ -314,6 +314,21 @@ class _StudyScreenState extends State<StudyScreen> {
                             color: Colors.green.shade700,
                           ),
                         ),
+                        if (currentMode == StudyMode.russianToEnglish && (card.transcription != null && card.transcription!.isNotEmpty)) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '/${card.transcription}/',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.volume_up),
+                            onPressed: _playPronunciation,
+                            tooltip: 'Произношение',
+                          ),
+                        ],
                         if (card.example != null && card.example!.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           Text(
