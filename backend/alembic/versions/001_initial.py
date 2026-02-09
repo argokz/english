@@ -18,7 +18,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    # Try to create pgvector extension, but don't fail if it's not installed
+    op.execute("""
+        DO $$
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS vector;
+        EXCEPTION WHEN OTHERS THEN
+            -- pgvector extension not available - will need to install it separately
+            RAISE NOTICE 'pgvector extension not available, skipping';
+        END $$;
+    """)
     op.create_table(
         "users",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -56,7 +65,16 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["deck_id"], ["decks.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.execute("ALTER TABLE cards ADD COLUMN embedding vector(768)")
+    # Add embedding column only if pgvector is available
+    op.execute("""
+        DO $$
+        BEGIN
+            ALTER TABLE cards ADD COLUMN embedding vector(768);
+        EXCEPTION WHEN OTHERS THEN
+            -- pgvector not available - skip embedding column for now
+            RAISE NOTICE 'pgvector not available, skipping embedding column';
+        END $$;
+    """)
 
     op.create_table(
         "review_log",
