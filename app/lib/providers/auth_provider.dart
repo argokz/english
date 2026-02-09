@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../core/constants.dart';
 import '../api/api_client.dart';
 
@@ -47,6 +48,34 @@ class AuthProvider with ChangeNotifier {
     if (_email != null) await _storage.write(key: kStorageKeyEmail, value: _email);
     if (_name != null) await _storage.write(key: kStorageKeyName, value: _name);
     notifyListeners();
+  }
+
+  /// Native Google Sign-In (uses id_token and backend /auth/google/token). Returns error message or null on success.
+  Future<String?> signInWithGoogle() async {
+    if (kGoogleWebClientId.isEmpty) {
+      return 'Google Web Client ID not set (see lib/core/constants.dart)';
+    }
+    try {
+      final googleSignIn = GoogleSignIn(
+        serverClientId: kGoogleWebClientId,
+        scopes: ['email', 'profile', 'openid'],
+      );
+      final account = await googleSignIn.signIn();
+      if (account == null) return null; // user cancelled
+      final auth = await account.authentication;
+      final idToken = auth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        return 'No ID token from Google';
+      }
+      final result = await api.loginWithGoogleIdToken(idToken);
+      if (result == null) return 'Backend login failed';
+      await saveFromCallback(result);
+      await googleSignIn.signOut(); // we only needed the token
+      return null;
+    } catch (e, st) {
+      debugPrint('signInWithGoogle: $e $st');
+      return e.toString();
+    }
   }
 
   Future<void> logout() async {

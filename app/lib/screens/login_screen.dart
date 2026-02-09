@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../core/constants.dart';
 import '../providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -15,8 +16,23 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _urlController = TextEditingController();
   String? _error;
+  bool _loading = false;
 
-  Future<void> _openGoogleLogin() async {
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _error = null;
+      _loading = true;
+    });
+    final auth = context.read<AuthProvider>();
+    final err = await auth.signInWithGoogle();
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _error = err;
+    });
+  }
+
+  Future<void> _openGoogleLoginInBrowser() async {
     final auth = context.read<AuthProvider>();
     final uri = Uri.parse(auth.googleLoginUrl);
     if (await canLaunchUrl(uri)) {
@@ -61,10 +77,20 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text('Learn words with spaced repetition', style: TextStyle(color: Colors.grey)),
               const SizedBox(height: 48),
               FilledButton.icon(
-                onPressed: _openGoogleLogin,
-                icon: const Icon(Icons.login),
-                label: const Text('Login with Google'),
+                onPressed: _loading ? null : _signInWithGoogle,
+                icon: _loading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.login),
+                label: Text(_loading ? 'Signing in...' : 'Sign in with Google'),
                 style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+              ),
+              if (kGoogleWebClientId.isEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Set kGoogleWebClientId in lib/core/constants.dart for native sign-in.', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              ],
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: _openGoogleLoginInBrowser,
+                icon: const Icon(Icons.open_in_browser, size: 18),
+                label: const Text('Open in browser instead'),
               ),
               const SizedBox(height: 24),
               const Text('After login you will be redirected. If the app did not open, paste the redirect URL below:'),

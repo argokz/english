@@ -31,6 +31,21 @@ class ApiClient {
   // Auth: open in browser
   String get googleLoginUrl => '$baseUrl/auth/google';
 
+  /// Exchange Google ID token (from native sign-in) for our JWT. Returns map for AuthProvider.saveFromCallback.
+  Future<Map<String, String>?> loginWithGoogleIdToken(String idToken) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/auth/google/token',
+      data: {'id_token': idToken},
+    );
+    final d = r.data!;
+    return {
+      'access_token': d['access_token'] as String,
+      'user_id': (d['user_id'] as dynamic)?.toString() ?? '',
+      'email': (d['email'] as dynamic)?.toString() ?? '',
+      'name': (d['name'] as dynamic)?.toString() ?? '',
+    };
+  }
+
   // Decks
   Future<List<Deck>> getDecks() async {
     final r = await _dio.get<List>('/decks');
