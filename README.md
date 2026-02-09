@@ -39,7 +39,7 @@ Alternatively create the DB manually (`createdb -p 5440 english_app`) and run `C
 Run:
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8007
 ```
 
 PostgreSQL: use port 5440, password from plan (see `.env.example`). Enable pgvector: `CREATE EXTENSION IF NOT EXISTS vector;` (done in migration).
@@ -51,7 +51,7 @@ cd app
 flutter pub get
 ```
 
-Set backend URL in `lib/core/constants.dart` (`kBaseUrl`). For Android emulator use `http://10.0.2.2:8000`.
+Set backend URL in `lib/core/constants.dart` (`kBaseUrl`). For Android emulator use `http://10.0.2.2:8007`.
 
 Run:
 
@@ -62,7 +62,7 @@ flutter run
 ## OAuth
 
 1. Create OAuth 2.0 credentials in Google Cloud Console (Web application).
-2. Add redirect URI: `http://localhost:8000/auth/google/callback` (and your production URL).
+2. Add redirect URI: `http://localhost:8007/auth/google/callback` (and your production URL).
 3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in backend `.env`.
 4. For mobile deep link after login, backend redirects to `englishapp://auth#access_token=...`. The app is configured for `englishapp` scheme on Android and iOS.
 

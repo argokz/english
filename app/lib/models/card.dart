@@ -4,6 +4,8 @@ class CardModel {
   final String word;
   final String translation;
   final String? example;
+  final String? transcription;
+  final String? pronunciationUrl;
   final DateTime createdAt;
   final String state;
   final DateTime due;
@@ -14,6 +16,8 @@ class CardModel {
     required this.word,
     required this.translation,
     this.example,
+    this.transcription,
+    this.pronunciationUrl,
     required this.createdAt,
     required this.state,
     required this.due,
@@ -26,6 +30,8 @@ class CardModel {
       word: json['word'] as String,
       translation: json['translation'] as String,
       example: json['example'] as String?,
+      transcription: json['transcription'] as String?,
+      pronunciationUrl: json['pronunciation_url'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       state: json['state'] as String? ?? 'learning',
       due: DateTime.parse(json['due'] as String),

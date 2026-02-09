@@ -18,6 +18,9 @@ class _AddWordScreenState extends State<AddWordScreen> {
   bool _loading = false;
   bool _enriching = false;
 
+  String? _transcription;
+  String? _pronunciationUrl;
+
   Future<void> _enrich() async {
     final word = _wordController.text.trim();
     if (word.isEmpty) return;
@@ -26,6 +29,8 @@ class _AddWordScreenState extends State<AddWordScreen> {
       final result = await context.read<AuthProvider>().api.enrichWord(word);
       _translationController.text = result['translation'] ?? '';
       _exampleController.text = result['example'] ?? '';
+      _transcription = result['transcription'];
+      _pronunciationUrl = result['pronunciation_url'];
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка подсказки: $e')));
     }
@@ -46,6 +51,8 @@ class _AddWordScreenState extends State<AddWordScreen> {
             word: word,
             translation: translation,
             example: _exampleController.text.trim().isEmpty ? null : _exampleController.text.trim(),
+            transcription: _transcription,
+            pronunciationUrl: _pronunciationUrl,
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сохранено')));

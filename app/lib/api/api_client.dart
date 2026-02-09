@@ -102,11 +102,13 @@ class ApiClient {
     return (r.data ?? []).map((e) => app.CardModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<app.CardModel> createCard(String deckId, {required String word, required String translation, String? example}) async {
+  Future<app.CardModel> createCard(String deckId, {required String word, required String translation, String? example, String? transcription, String? pronunciationUrl}) async {
     final r = await _dio.post<Map<String, dynamic>>('decks/$deckId/cards', data: {
       'word': word,
       'translation': translation,
       if (example != null && example.isNotEmpty) 'example': example,
+      if (transcription != null && transcription.isNotEmpty) 'transcription': transcription,
+      if (pronunciationUrl != null && pronunciationUrl.isNotEmpty) 'pronunciation_url': pronunciationUrl,
     });
     return app.CardModel.fromJson(r.data!);
   }
@@ -145,6 +147,8 @@ class ApiClient {
     return {
       'translation': r.data!['translation'] as String? ?? '',
       'example': r.data!['example'] as String? ?? '',
+      'transcription': r.data!['transcription'] as String? ?? '',
+      'pronunciation_url': r.data!['pronunciation_url'] as String? ?? '',
     };
   }
 

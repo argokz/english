@@ -1,6 +1,11 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/card.dart' as app;
+import '../models/study_mode.dart';
 import '../providers/auth_provider.dart';
 
 class StudyScreen extends StatefulWidget {
@@ -16,14 +21,45 @@ class StudyScreen extends StatefulWidget {
 class _StudyScreenState extends State<StudyScreen> {
   List<app.CardModel>? _queue;
   int _index = 0;
-  bool _showBack = false;
+  bool _showAnswer = false;
   bool _loading = true;
   String? _error;
+  StudyMode _studyMode = StudyMode.englishToRussian;
+  final TextEditingController _answerController = TextEditingController();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isCorrect = false;
+  bool _checkingAnswer = false;
 
   @override
   void initState() {
     super.initState();
+    _loadSettings();
     _load();
+    _answerController.addListener(() {
+      setState(() {}); // Обновляем UI при изменении текста
+    });
+  }
+
+  @override
+  void dispose() {
+    _answerController.dispose();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final modeKey = prefs.getString('study_mode') ?? 'english_to_russian';
+    setState(() {
+      _studyMode = StudyModeExtension.fromStorageKey(modeKey);
+    });
+  }
+
+  StudyMode _getCurrentCardMode() {
+    if (_studyMode == StudyMode.mixed) {
+      return Random().nextBool() ? StudyMode.englishToRussian : StudyMode.russianToEnglish;
+    }
+    return _studyMode;
   }
 
   Future<void> _load() async {
@@ -37,7 +73,9 @@ class _StudyScreenState extends State<StudyScreen> {
       setState(() {
         _queue = due;
         _index = 0;
-        _showBack = false;
+        _showAnswer = false;
+        _answerController.clear();
+        _isCorrect = false;
         _loading = false;
       });
     } catch (e) {
@@ -48,6 +86,66 @@ class _StudyScreenState extends State<StudyScreen> {
     }
   }
 
+  Future<void> _checkAnswer() async {
+    if (_queue == null || _index >= _queue!.length) return;
+    
+    final card = _queue![_index];
+    final currentMode = _getCurrentCardMode();
+    final userAnswer = _answerController.text.trim();
+    
+    setState(() => _checkingAnswer = true);
+    
+    // Проверка правописания (без учета регистра и лишних пробелов)
+    String correctAnswer;
+    if (currentMode == StudyMode.englishToRussian) {
+      correctAnswer = card.translation.toLowerCase().trim();
+    } else {
+      correctAnswer = card.word.toLowerCase().trim();
+    }
+    
+    final normalizedUserAnswer = userAnswer.toLowerCase().trim();
+    final isCorrect = normalizedUserAnswer == correctAnswer;
+    
+    // Небольшая толерантность: убираем множественные пробелы
+    final normalizedCorrect = correctAnswer.replaceAll(RegExp(r'\s+'), ' ');
+    final normalizedUser = normalizedUserAnswer.replaceAll(RegExp(r'\s+'), ' ');
+    final isCorrectTolerant = normalizedUser == normalizedCorrect || normalizedUserAnswer == correctAnswer;
+    
+    setState(() {
+      _isCorrect = isCorrectTolerant;
+      _showAnswer = true;
+      _checkingAnswer = false;
+    });
+  }
+
+  Future<void> _playPronunciation() async {
+    final card = _queue![_index];
+    if (card.pronunciationUrl != null && card.pronunciationUrl!.isNotEmpty) {
+      try {
+        await _audioPlayer.play(UrlSource(card.pronunciationUrl!));
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка воспроизведения: $e')),
+          );
+        }
+      }
+    } else {
+      // Fallback: используем Google TTS через URL
+      final word = card.word;
+      final url = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${Uri.encodeComponent(word)}';
+      try {
+        await _audioPlayer.play(UrlSource(url));
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка воспроизведения: $e')),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _rate(int rating) async {
     final card = _queue![_index];
     try {
@@ -55,7 +153,9 @@ class _StudyScreenState extends State<StudyScreen> {
       setState(() {
         _queue!.removeAt(_index);
         if (_queue!.isEmpty) _index = 0;
-        _showBack = false;
+        _showAnswer = false;
+        _answerController.clear();
+        _isCorrect = false;
       });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
@@ -92,6 +192,13 @@ class _StudyScreenState extends State<StudyScreen> {
       );
     }
     final card = _queue![_index];
+    final currentMode = _getCurrentCardMode();
+    
+    // Определяем, что показывать на лицевой стороне
+    final frontText = currentMode == StudyMode.englishToRussian ? card.word : card.translation;
+    final backText = currentMode == StudyMode.englishToRussian ? card.translation : card.word;
+    final showTranscription = currentMode == StudyMode.englishToRussian && card.transcription != null;
+    
     return Scaffold(
       appBar: AppBar(title: Text('${widget.deckName} (осталось ${_queue!.length})')),
       body: SafeArea(
@@ -100,32 +207,128 @@ class _StudyScreenState extends State<StudyScreen> {
           child: Column(
             children: [
               const Spacer(),
-              GestureDetector(
-                onTap: () => setState(() => _showBack = true),
-                child: Card(
-                  elevation: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Center(
-                      child: _showBack
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(card.translation, style: Theme.of(context).textTheme.headlineMedium),
-                                if (card.example != null && card.example!.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 16),
-                                    child: Text(card.example!, style: Theme.of(context).textTheme.bodyLarge),
-                                  ),
-                              ],
-                            )
-                          : Text(card.word, style: Theme.of(context).textTheme.headlineLarge),
-                    ),
+              // Лицевая сторона карточки
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        frontText,
+                        style: Theme.of(context).textTheme.headlineLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      if (showTranscription && card.transcription != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '[${card.transcription}]',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                      if (currentMode == StudyMode.englishToRussian && card.pronunciationUrl != null) ...[
+                        const SizedBox(height: 12),
+                        IconButton(
+                          icon: const Icon(Icons.volume_up),
+                          onPressed: _playPronunciation,
+                          tooltip: 'Произношение',
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
-              const Spacer(),
-              if (_showBack) ...[
+              const SizedBox(height: 24),
+              // Поле ввода ответа
+              if (!_showAnswer) ...[
+                TextField(
+                  controller: _answerController,
+                  decoration: InputDecoration(
+                    labelText: currentMode == StudyMode.englishToRussian 
+                        ? 'Введите перевод на русском' 
+                        : 'Введите слово на английском',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _answerController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.check),
+                            onPressed: _checkingAnswer ? null : _checkAnswer,
+                          )
+                        : null,
+                  ),
+                  textCapitalization: currentMode == StudyMode.englishToRussian 
+                      ? TextCapitalization.none 
+                      : TextCapitalization.none,
+                  autofocus: true,
+                  onSubmitted: (_) => _checkAnswer(),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _checkingAnswer || _answerController.text.trim().isEmpty 
+                      ? null 
+                      : _checkAnswer,
+                  child: _checkingAnswer 
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Проверить'),
+                ),
+              ] else ...[
+                // Обратная сторона - показываем правильный ответ
+                Card(
+                  color: _isCorrect ? Colors.green.shade50 : Colors.red.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_answerController.text.isNotEmpty) ...[
+                          Text(
+                            'Ваш ответ:',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _answerController.text,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: _isCorrect ? Colors.green.shade700 : Colors.red.shade700,
+                              decoration: _isCorrect ? null : TextDecoration.lineThrough,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        const SizedBox(height: 16),
+                        Text(
+                          'Правильный ответ:',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          backText,
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                        if (card.example != null && card.example!.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            card.example!,
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              fontStyle: FontStyle.italic,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 const Text('Как вспомнили?'),
                 const SizedBox(height: 12),
                 Row(
@@ -141,6 +344,7 @@ class _StudyScreenState extends State<StudyScreen> {
                   ],
                 ),
               ],
+              const Spacer(),
             ],
           ),
         ),
