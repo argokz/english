@@ -2,13 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from sqlalchemy.ext.asyncio import AsyncSession
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 import httpx
 
 from app.config import settings
 from app.db.session import get_db
 from app.db.repositories.user_repo import get_user_by_google_id, create_user
 from app.services.auth_service import create_access_token
-from app.schemas.auth import TokenResponse
+from app.schemas.auth import TokenResponse, GoogleIdTokenRequest
 
 router = APIRouter()
 
@@ -93,6 +95,45 @@ async def google_callback(
     )
     redirect_url = f"{settings.frontend_redirect_uri}#access_token={response.access_token}&user_id={response.user_id}&email={response.email}"
     return RedirectResponse(url=redirect_url)
+
+
+@router.post("/google/token")
+async def google_token(
+    body: GoogleIdTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify Google ID token (from native app sign-in), create/find user, return JWT."""
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            body.id_token,
+            google_requests.Request(),
+            settings.google_client_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Google ID token: {e}")
+    google_id_str = idinfo.get("sub")
+    email = idinfo.get("email") or ""
+    name = idinfo.get("name")
+    picture_url = idinfo.get("picture")
+    if not google_id_str or not email:
+        raise HTTPException(status_code=400, detail="Missing user info in ID token")
+
+    user = await get_user_by_google_id(db, google_id_str)
+    if not user:
+        user = await create_user(
+            db, email=email, google_id=google_id_str, name=name, picture_url=picture_url
+        )
+    await db.commit()
+
+    access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    return TokenResponse(
+        access_token=access_token,
+        user_id=str(user.id),
+        email=user.email,
+        name=user.name,
+    )
 
 
 @router.get("/google/callback/json")
