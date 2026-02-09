@@ -13,6 +13,8 @@ from app.schemas.ai import (
     EnrichWordRequest,
     EnrichWordResponse,
     SimilarWordItem,
+    BackfillTranscriptionsRequest,
+    BackfillTranscriptionsResponse,
 )
 
 router = APIRouter()
@@ -32,8 +34,16 @@ async def generate_words(
     created = 0
     for item in items:
         emb = gemini_service.get_embedding(f"{item['word']}: {item['translation']}")
+        pronunciation_url = gemini_service.get_pronunciation_url(item["word"])
         await card_repo.create_card(
-            db, deck_id, item["word"], item["translation"], item.get("example"), embedding=emb
+            db,
+            deck_id,
+            item["word"],
+            item["translation"],
+            item.get("example"),
+            embedding=emb,
+            transcription=item.get("transcription"),
+            pronunciation_url=pronunciation_url,
         )
         created += 1
     await db.commit()
@@ -56,6 +66,38 @@ async def enrich_word(
         transcription=result.get("transcription", ""),
         pronunciation_url=pronunciation_url,
     )
+
+
+@router.post("/backfill-transcriptions", response_model=BackfillTranscriptionsResponse)
+async def backfill_transcriptions(
+    body: BackfillTranscriptionsRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update cards that have no transcription or pronunciation_url using Gemini + Google TTS."""
+    body = body or BackfillTranscriptionsRequest()
+    deck_id = UUID(body.deck_id) if body.deck_id else None
+    if body.deck_id and deck_id:
+        deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+    cards = await card_repo.get_cards_missing_transcription(
+        db, current_user.id, deck_id=deck_id, limit=body.limit
+    )
+    updated = 0
+    for card in cards:
+        try:
+            result = gemini_service.enrich_word(card.word)
+            transcription = result.get("transcription") or ""
+            pronunciation_url = gemini_service.get_pronunciation_url(card.word)
+            await card_repo.update_card(
+                db, card, transcription=transcription, pronunciation_url=pronunciation_url
+            )
+            updated += 1
+        except Exception:
+            continue
+    await db.commit()
+    return BackfillTranscriptionsResponse(updated=updated)
 
 
 @router.get("/similar-words", response_model=list[SimilarWordItem])

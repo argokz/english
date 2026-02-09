@@ -16,16 +16,16 @@ def _model():
 
 
 def generate_word_list(level: str | None = None, topic: str | None = None, count: int = 20) -> list[dict[str, str]]:
-    """Generate list of words. level e.g. A1, B2 or topic e.g. business, travel. Returns list of {word, translation, example}."""
+    """Generate list of words with translation, example, and IPA transcription. Returns list of {word, translation, example, transcription}."""
     if not level and not topic:
         level = "A1"
     prompt = f"""Generate {count} frequent English words for learners.
 {"Use CEFR level: " + level + "." if level else ""}
 {"Use topic/theme: " + topic + "." if topic else ""}
-For each word provide: the English word, Russian translation, and one short example sentence in English.
-Output format: one line per word, pipe-separated: word | translation | example
-Example: apple | яблоко | I eat an apple every day.
-Do not add numbering or extra text. Only lines in format: word | translation | example"""
+For each word provide: 1) English word, 2) Russian translation, 3) one short example sentence in English, 4) IPA phonetic transcription (e.g. ˈæpl for apple).
+Output format: one line per word, pipe-separated: word | translation | example | transcription
+Example: apple | яблоко | I eat an apple every day. | ˈæpl
+Do not add numbering or extra text. Only lines in format: word | translation | example | transcription"""
 
     response = _model().generate_content(prompt)
     text = (response.text or "").strip()
@@ -34,12 +34,16 @@ Do not add numbering or extra text. Only lines in format: word | translation | e
         line = line.strip()
         if not line or "|" not in line:
             continue
-        parts = [p.strip() for p in line.split("|", 2)]
+        parts = [p.strip() for p in line.split("|", 3)]
         if len(parts) >= 2:
+            transcription = parts[3] if len(parts) > 3 else None
+            if transcription:
+                transcription = transcription.strip("[]")
             result.append({
                 "word": parts[0],
                 "translation": parts[1],
                 "example": parts[2] if len(parts) > 2 else None,
+                "transcription": transcription or None,
             })
     return result[:count]
 

@@ -24,3 +24,12 @@ class SimilarWordItem(BaseModel):
     translation: str
     example: str | None
     card_id: str
+
+
+class BackfillTranscriptionsRequest(BaseModel):
+    deck_id: str | None = None  # if None, all user's decks
+    limit: int = 50
+
+
+class BackfillTranscriptionsResponse(BaseModel):
+    updated: int
