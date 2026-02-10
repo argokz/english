@@ -69,7 +69,7 @@ class _DeckScreenState extends State<DeckScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
       return;
     }
-    if (suggested.isEmpty) {
+    if (suggested == null || suggested.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Группы синонимов не найдены')),
       );
@@ -84,7 +84,7 @@ class _DeckScreenState extends State<DeckScreen> {
           width: double.maxFinite,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: suggested.length,
+            itemCount: suggested!.length,
             itemBuilder: (_, i) {
               final g = suggested![i];
               return ListTile(
@@ -106,7 +106,7 @@ class _DeckScreenState extends State<DeckScreen> {
                 await api.applySynonymGroups(widget.deckId, suggested!.map((g) => g.cardIds).toList());
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Применено групп: ${suggested.length}')),
+                    SnackBar(content: Text('Применено групп: ${suggested!.length}')),
                   );
                   setState(() => _groupBySynonyms = true);
                   _load();
@@ -240,6 +240,58 @@ class _DeckScreenState extends State<DeckScreen> {
                     ],
                   ),
                 ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'add',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AddWordScreen(deckId: widget.deckId),
+                ),
+              );
+              _load();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Добавить слово'),
+          ),
+          const SizedBox(height: 8),
+          FloatingActionButton.extended(
+            heroTag: 'generate',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GenerateWordsScreen(deckId: widget.deckId),
+                ),
+              );
+              _load();
+            },
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Сгенерировать слова'),
+          ),
+          const SizedBox(height: 8),
+          FloatingActionButton.extended(
+            heroTag: 'similar',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SimilarWordsScreen(deckId: widget.deckId, deckName: widget.deckName),
+                ),
+              );
+              _load();
+            },
+            icon: const Icon(Icons.lightbulb_outline),
+            label: const Text('Похожие слова'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCardTile(app.CardModel c) {
     return Card(
       child: ListTile(
@@ -322,58 +374,6 @@ class _DeckScreenState extends State<DeckScreen> {
           ],
         );
       },
-    );
-  }
-
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'add',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AddWordScreen(deckId: widget.deckId),
-                ),
-              );
-              _load();
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Добавить слово'),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton.extended(
-            heroTag: 'generate',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GenerateWordsScreen(deckId: widget.deckId),
-                ),
-              );
-              _load();
-            },
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Сгенерировать слова'),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton.extended(
-            heroTag: 'similar',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SimilarWordsScreen(deckId: widget.deckId, deckName: widget.deckName),
-                ),
-              );
-              _load();
-            },
-            icon: const Icon(Icons.lightbulb_outline),
-            label: const Text('Похожие слова'),
-          ),
-        ],
-      ),
     );
   }
 }
