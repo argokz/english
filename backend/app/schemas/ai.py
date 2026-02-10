@@ -33,3 +33,21 @@ class BackfillTranscriptionsRequest(BaseModel):
 
 class BackfillTranscriptionsResponse(BaseModel):
     updated: int
+
+
+class SynonymsResponse(BaseModel):
+    synonyms: list[str]
+    cards_in_deck: list[SimilarWordItem]  # cards in deck whose word is in synonyms
+
+
+class SynonymGroupItem(BaseModel):
+    words: list[str]
+    card_ids: list[str]
+
+
+class SuggestSynonymGroupsResponse(BaseModel):
+    groups: list[SynonymGroupItem]
+
+
+class ApplySynonymGroupsRequest(BaseModel):
+    groups: list[list[str]]  # each inner list is card_ids in one group

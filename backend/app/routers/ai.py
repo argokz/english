@@ -15,6 +15,10 @@ from app.schemas.ai import (
     SimilarWordItem,
     BackfillTranscriptionsRequest,
     BackfillTranscriptionsResponse,
+    SynonymsResponse,
+    SuggestSynonymGroupsResponse,
+    SynonymGroupItem,
+    ApplySynonymGroupsRequest,
 )
 
 router = APIRouter()
@@ -100,6 +104,31 @@ async def backfill_transcriptions(
     return BackfillTranscriptionsResponse(updated=updated)
 
 
+@router.get("/synonyms", response_model=SynonymsResponse)
+async def get_synonyms(
+    word: str,
+    deck_id: str,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get synonyms for word via Gemini; return which of those are already in the deck as cards."""
+    if not word.strip():
+        return SynonymsResponse(synonyms=[], cards_in_deck=[])
+    deck = await deck_repo.get_deck_by_id(db, UUID(deck_id), current_user.id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    synonyms = gemini_service.get_synonyms(word.strip(), limit=limit)
+    synonym_set = {s.lower() for s in synonyms}
+    cards = await card_repo.get_cards_by_deck(db, UUID(deck_id))
+    cards_in_deck = [
+        SimilarWordItem(word=c.word, translation=c.translation, example=c.example, card_id=str(c.id))
+        for c in cards
+        if c.word and c.word.strip().lower() in synonym_set
+    ]
+    return SynonymsResponse(synonyms=synonyms, cards_in_deck=cards_in_deck)
+
+
 @router.get("/similar-words", response_model=list[SimilarWordItem])
 async def similar_words(
     word: str,
@@ -151,3 +180,72 @@ async def similar_words(
         )
         for r in rows
     ]
+
+
+def _build_synonym_groups(cards: list, synonym_map: dict[str, set[str]]) -> list[tuple[list[str], list[str]]]:
+    """Build groups: list of (card_ids, words). synonym_map: card_id -> set of synonym words (lower)."""
+    word_to_card_id = {}
+    for c in cards:
+        w = (c.word or "").strip().lower()
+        if w:
+            word_to_card_id[w] = str(c.id)
+    # Graph: card_id -> set of card_ids that are synonyms (same group)
+    graph: dict[str, set[str]] = {}
+    for c in cards:
+        cid = str(c.id)
+        graph.setdefault(cid, set())
+        syns = synonym_map.get(cid, set())
+        for w in syns:
+            if w in word_to_card_id and word_to_card_id[w] != cid:
+                graph[cid].add(word_to_card_id[w])
+    # Connected components
+    visited = set()
+
+    def dfs(nid: str, comp: set[str]) -> None:
+        visited.add(nid)
+        comp.add(nid)
+        for nb in graph.get(nid, set()):
+            if nb not in visited:
+                dfs(nb, comp)
+
+    groups = []
+    for c in cards:
+        cid = str(c.id)
+        if cid in visited:
+            continue
+        comp = set()
+        dfs(cid, comp)
+        if len(comp) >= 2:
+            card_ids = list(comp)
+            words = [c.word for c in cards if str(c.id) in comp]
+            groups.append((card_ids, words))
+    return groups
+
+
+@router.post("/synonym-groups/suggest", response_model=SuggestSynonymGroupsResponse)
+async def suggest_synonym_groups(
+    deck_id: str,
+    limit: int = 30,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Suggest synonym groups for deck: for each card get Gemini synonyms, cluster, return groups (2+ cards)."""
+    deck = await deck_repo.get_deck_by_id(db, UUID(deck_id), current_user.id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    cards = await card_repo.get_cards_by_deck(db, UUID(deck_id))
+    cards = cards[:limit]
+    synonym_map: dict[str, set[str]] = {}
+    for c in cards:
+        try:
+            syns = gemini_service.get_synonyms(c.word or "", limit=12)
+            synonym_map[str(c.id)] = {s.lower() for s in syns}
+        except Exception:
+            synonym_map[str(c.id)] = set()
+    raw_groups = _build_synonym_groups(cards, synonym_map)
+    return SuggestSynonymGroupsResponse(
+        groups=[
+            SynonymGroupItem(words=words, card_ids=card_ids)
+            for card_ids, words in raw_groups
+        ]
+    )

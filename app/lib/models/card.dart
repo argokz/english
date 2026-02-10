@@ -9,6 +9,7 @@ class CardModel {
   final DateTime createdAt;
   final String state;
   final DateTime due;
+  final String? synonymGroupId;
 
   CardModel({
     required this.id,
@@ -21,6 +22,7 @@ class CardModel {
     required this.createdAt,
     required this.state,
     required this.due,
+    this.synonymGroupId,
   });
 
   factory CardModel.fromJson(Map<String, dynamic> json) {
@@ -35,6 +37,7 @@ class CardModel {
       createdAt: DateTime.parse(json['created_at'] as String),
       state: json['state'] as String? ?? 'learning',
       due: DateTime.parse(json['due'] as String),
+      synonymGroupId: json['synonym_group_id'] as String?,
     );
   }
 }

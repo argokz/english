@@ -85,6 +85,27 @@ def get_pronunciation_url(word: str) -> str | None:
         return None
 
 
+def get_synonyms(word: str, limit: int = 10) -> list[str]:
+    """Return English synonyms (and near-synonyms) for the word. Lowercased, no duplicates."""
+    if not word.strip():
+        return []
+    prompt = f"""List up to {limit} English synonyms or near-synonyms for the word "{word.strip()}".
+Output only the words, one per line, nothing else. Use lowercase. Do not repeat the original word."""
+    try:
+        response = _model().generate_content(prompt)
+        text = (response.text or "").strip()
+        seen = set()
+        result = []
+        for line in text.split("\n"):
+            w = line.strip().lower()
+            if w and w != word.strip().lower() and w not in seen:
+                seen.add(w)
+                result.append(w)
+        return result[:limit]
+    except Exception:
+        return []
+
+
 def get_embedding(text: str) -> list[float] | None:
     """Get embedding vector for text (e.g. word or 'word: translation'). Returns 768-dim list or None."""
     try:

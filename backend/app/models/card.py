@@ -31,6 +31,7 @@ class Card(Base):
     due: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     fsrs_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     embedding: Mapped[list | None] = mapped_column(Vector(768), nullable=True)
+    synonym_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     deck = relationship("Deck", back_populates="cards")
     review_logs = relationship("ReviewLog", back_populates="card", cascade="all, delete-orphan")

@@ -167,4 +167,54 @@ class ApiClient {
     });
     return r.data!['updated'] as int;
   }
+
+  /// Synonyms via Gemini; returns synonyms list and cards already in deck.
+  Future<SynonymsResult> getSynonyms(String word, {required String deckId, int limit = 10}) async {
+    final r = await _dio.get<Map<String, dynamic>>('ai/synonyms', queryParameters: {
+      'word': word,
+      'deck_id': deckId,
+      'limit': limit,
+    });
+    final d = r.data!;
+    final cardsInDeck = (d['cards_in_deck'] as List?)
+        ?.map((e) => SimilarWord.fromJson(e as Map<String, dynamic>))
+        .toList() ?? [];
+    return SynonymsResult(
+      synonyms: List<String>.from(d['synonyms'] as List? ?? []),
+      cardsInDeck: cardsInDeck,
+    );
+  }
+
+  /// Suggest synonym groups for deck (Gemini clusters).
+  Future<List<SynonymGroup>> suggestSynonymGroups(String deckId, {int limit = 30}) async {
+    final r = await _dio.post<Map<String, dynamic>>('ai/synonym-groups/suggest', queryParameters: {
+      'deck_id': deckId,
+      'limit': limit,
+    });
+    final list = r.data!['groups'] as List? ?? [];
+    return list.map((e) => SynonymGroup.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Apply synonym groups (set group id for given card groups).
+  Future<void> applySynonymGroups(String deckId, List<List<String>> groups) async {
+    await _dio.post('decks/$deckId/synonym-groups', data: {'groups': groups});
+  }
+}
+
+class SynonymsResult {
+  final List<String> synonyms;
+  final List<SimilarWord> cardsInDeck;
+  SynonymsResult({required this.synonyms, required this.cardsInDeck});
+}
+
+class SynonymGroup {
+  final List<String> words;
+  final List<String> cardIds;
+  SynonymGroup({required this.words, required this.cardIds});
+  factory SynonymGroup.fromJson(Map<String, dynamic> json) {
+    return SynonymGroup(
+      words: List<String>.from(json['words'] as List? ?? []),
+      cardIds: List<String>.from(json['card_ids'] as List? ?? []),
+    );
+  }
 }
