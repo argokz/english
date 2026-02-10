@@ -51,23 +51,74 @@ class _DeckScreenState extends State<DeckScreen> {
     _load();
   }
 
+  Future<void> _runBackfillTranscriptions() async {
+    final api = context.read<AuthProvider>().api;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Обновление транскрипций…', style: TextStyle(color: Colors.grey)),
+            Text('Может занять несколько минут', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+    try {
+      final updated = await api.backfillTranscriptions(deckId: widget.deckId, limit: 100);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Обновлено карточек: $updated')),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            action: SnackBarAction(label: 'Повторить', onPressed: () => _runBackfillTranscriptions()),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _showSuggestSynonymGroups() async {
     final api = context.read<AuthProvider>().api;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      builder: (_) => const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Поиск групп синонимов…', style: TextStyle(color: Colors.grey)),
+            Text('Может занять 1–2 минуты', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+      ),
     );
     List<SynonymGroup>? suggested;
     try {
       suggested = await api.suggestSynonymGroups(widget.deckId, limit: 30);
-      if (!mounted) return;
-      Navigator.of(context).pop();
     } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка: $e'), action: SnackBarAction(label: 'Повторить', onPressed: () => _showSuggestSynonymGroups())),
+        );
+      }
       return;
+    } finally {
+      if (mounted) Navigator.of(context).pop();
     }
     if (suggested == null || suggested.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -160,31 +211,7 @@ class _DeckScreenState extends State<DeckScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (value) async {
-              if (value == 'backfill') {
-                final api = context.read<AuthProvider>().api;
-                if (!mounted) return;
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (_) => const Center(child: CircularProgressIndicator()),
-                );
-                try {
-                  final updated = await api.backfillTranscriptions(deckId: widget.deckId, limit: 100);
-                  if (!mounted) return;
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Обновлено карточек: $updated')),
-                  );
-                  _load();
-                } catch (e) {
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Ошибка: $e')),
-                    );
-                  }
-                }
-              } else if (value == 'synonym_groups') {
+              if (value == 'backfill') _runBackfillTranscriptions(); else if (value == 'synonym_groups') {
                 _showSuggestSynonymGroups();
               }
             },

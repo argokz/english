@@ -20,6 +20,7 @@ class _GenerateWordsScreenState extends State<GenerateWordsScreen> {
   static const levels = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
   Future<void> _generate() async {
+    if (_loading) return;
     setState(() => _loading = true);
     try {
       final created = await context.read<AuthProvider>().api.generateWords(
@@ -33,9 +34,20 @@ class _GenerateWordsScreenState extends State<GenerateWordsScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            action: SnackBarAction(
+              label: 'Повторить',
+              onPressed: () => _generate(),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-    setState(() => _loading = false);
   }
 
   @override
@@ -64,10 +76,22 @@ class _GenerateWordsScreenState extends State<GenerateWordsScreen> {
             const SizedBox(height: 16),
             Text('Количество: $_count'),
             Slider(value: _count.toDouble(), min: 5, max: 50, divisions: 9, label: '$_count', onChanged: (v) => setState(() => _count = v.round())),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text('Генерация может занять 1–2 минуты…', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
             FilledButton(
               onPressed: _loading ? null : _generate,
-              child: _loading ? const SizedBox(height: 24, child: Center(child: CircularProgressIndicator(strokeWidth: 2))) : const Text('Сгенерировать'),
+              child: _loading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Сгенерировать'),
             ),
           ],
         ),

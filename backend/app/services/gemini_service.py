@@ -76,6 +76,44 @@ def _model():
     return genai.GenerativeModel(model_name)
 
 
+def _generate_content_with_fallback(prompt: str) -> str:
+    """
+    Вызов generate_content с автоматическим переключением модели при исчерпании квоты.
+    Все функции, использующие Gemini generate_content, должны вызывать это.
+    Общая переменная _current_model_index обновляется здесь — все последующие вызовы используют новую модель.
+    """
+    models = _get_gemini_models()
+    max_attempts = len(models)
+    last_error = None
+    for attempt in range(max_attempts):
+        try:
+            current_model_name = _get_current_model_name()
+            logger.debug(f"Попытка {attempt + 1}/{max_attempts}: модель {current_model_name}")
+            response = _model().generate_content(prompt)
+            text = (response.text or "").strip()
+            logger.debug(f"Успешно, модель {current_model_name}")
+            return text
+        except google_exceptions.ResourceExhausted as e:
+            last_error = e
+            logger.warning(f"Квота исчерпана для {_get_current_model_name()}, переключаемся на следующую модель")
+            if attempt < max_attempts - 1:
+                _switch_to_next_model()
+            else:
+                retry_delay = 60
+                error_msg = str(e)
+                if "retry" in error_msg.lower():
+                    import re as re_module
+                    delay_match = re_module.search(r"retry in ([\d.]+)s", error_msg, re_module.I)
+                    if delay_match:
+                        retry_delay = int(float(delay_match.group(1))) + 5
+                raise ValueError(
+                    f"Превышен лимит запросов для всех моделей Gemini. Попробуйте через {retry_delay} с или перейдите на платный тариф."
+                ) from e
+    if last_error:
+        raise ValueError("Все модели исчерпали квоту") from last_error
+    return ""
+
+
 def generate_word_list(level: str | None = None, topic: str | None = None, count: int = 20) -> list[dict[str, str]]:
     """Generate list of words with translation, example, and IPA transcription. Returns list of {word, translation, example, transcription}."""
     if not level and not topic:
@@ -88,66 +126,25 @@ Output format: one line per word, pipe-separated: word | translation | example |
 Example: apple | яблоко | I eat an apple every day. | ˈæpl
 Do not add numbering or extra text. Only lines in format: word | translation | example | transcription"""
 
-    # Пробуем все модели по очереди при ошибке квоты
-    models = _get_gemini_models()
-    max_attempts = len(models)
-    last_error = None
-    
-    for attempt in range(max_attempts):
-        try:
-            current_model_name = _get_current_model_name()
-            logger.debug(f"Попытка {attempt + 1}/{max_attempts}: использование модели {current_model_name}")
-            response = _model().generate_content(prompt)
-            # Успешно - возвращаем результат
-            text = (response.text or "").strip()
-            result = []
-            for line in text.split("\n"):
-                line = line.strip()
-                if not line or "|" not in line:
-                    continue
-                parts = [p.strip() for p in line.split("|", 3)]
-                if len(parts) >= 2:
-                    transcription = parts[3] if len(parts) > 3 else None
-                    if transcription:
-                        transcription = transcription.strip("[]")
-                    result.append({
-                        "word": parts[0],
-                        "translation": parts[1],
-                        "example": parts[2] if len(parts) > 2 else None,
-                        "transcription": transcription or None,
-                    })
-            logger.info(f"Успешно сгенерировано {len(result)} слов используя модель {current_model_name}")
-            return result[:count]
-            
-        except google_exceptions.ResourceExhausted as e:
-            last_error = e
-            current_model_name = _get_current_model_name()
-            logger.warning(f"Превышена квота для модели {current_model_name}, переключаемся на следующую")
-            
-            # Переключаемся на следующую модель
-            if attempt < max_attempts - 1:
-                new_model = _switch_to_next_model()
-                logger.info(f"Переключение на модель {new_model}")
-            else:
-                # Все модели исчерпаны
-                retry_delay = 60
-                error_msg = str(e)
-                if "retry_delay" in error_msg or "Please retry in" in error_msg:
-                    import re as re_module
-                    delay_match = re_module.search(r"retry in ([\d.]+)s", error_msg)
-                    if delay_match:
-                        retry_delay = int(float(delay_match.group(1))) + 5
-                
-                raise ValueError(
-                    f"Превышен лимит запросов для всех доступных моделей Gemini API. "
-                    f"Попробуйте позже (через {retry_delay} секунд) или переключитесь на платный тариф. "
-                    f"Подробнее: https://ai.google.dev/gemini-api/docs/rate-limits"
-                ) from e
-    
-    # Не должно сюда дойти, но на всякий случай
-    if last_error:
-        raise ValueError("Не удалось сгенерировать слова: все модели исчерпали квоту") from last_error
-    raise ValueError("Не удалось сгенерировать слова")
+    text = _generate_content_with_fallback(prompt)
+    result = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line or "|" not in line:
+            continue
+        parts = [p.strip() for p in line.split("|", 3)]
+        if len(parts) >= 2:
+            transcription = parts[3] if len(parts) > 3 else None
+            if transcription:
+                transcription = transcription.strip("[]")
+            result.append({
+                "word": parts[0],
+                "translation": parts[1],
+                "example": parts[2] if len(parts) > 2 else None,
+                "transcription": transcription or None,
+            })
+    logger.info(f"Сгенерировано {len(result)} слов")
+    return result[:count]
 
 
 def enrich_word(word: str) -> dict[str, str]:
@@ -159,61 +156,16 @@ def enrich_word(word: str) -> dict[str, str]:
 
 Reply in JSON only: {{"translation": "...", "example": "...", "transcription": "..."}}"""
 
-    # Пробуем все модели по очереди при ошибке квоты
-    models = _get_gemini_models()
-    max_attempts = len(models)
-    last_error = None
-    
-    for attempt in range(max_attempts):
+    text = _generate_content_with_fallback(prompt)
+    m = re.search(r"\{[^{}]*\"translation\"[^{}]*\"example\"[^{}]*\"transcription\"[^{}]*\}", text)
+    if m:
         try:
-            current_model_name = _get_current_model_name()
-            logger.debug(f"Попытка {attempt + 1}/{max_attempts}: использование модели {current_model_name} для слова '{word}'")
-            response = _model().generate_content(prompt)
-            # Успешно - обрабатываем результат
-            text = (response.text or "").strip()
-            # Extract JSON from response (may be wrapped in markdown)
-            m = re.search(r"\{[^{}]*\"translation\"[^{}]*\"example\"[^{}]*\"transcription\"[^{}]*\}", text)
-            if m:
-                try:
-                    result = json.loads(m.group())
-                    # Clean transcription - remove brackets if present
-                    if "transcription" in result and result["transcription"]:
-                        result["transcription"] = result["transcription"].strip("[]")
-                    logger.debug(f"Успешно обогащено слово '{word}' используя модель {current_model_name}")
-                    return result
-                except json.JSONDecodeError:
-                    pass
-            # Если не удалось распарсить JSON, возвращаем пустой результат
-            return {"translation": "", "example": "", "transcription": ""}
-            
-        except google_exceptions.ResourceExhausted as e:
-            last_error = e
-            current_model_name = _get_current_model_name()
-            logger.warning(f"Превышена квота для модели {current_model_name}, переключаемся на следующую")
-            
-            # Переключаемся на следующую модель
-            if attempt < max_attempts - 1:
-                new_model = _switch_to_next_model()
-                logger.info(f"Переключение на модель {new_model}")
-            else:
-                # Все модели исчерпаны
-                retry_delay = 60
-                error_msg = str(e)
-                if "retry_delay" in error_msg or "Please retry in" in error_msg:
-                    import re as re_module
-                    delay_match = re_module.search(r"retry in ([\d.]+)s", error_msg)
-                    if delay_match:
-                        retry_delay = int(float(delay_match.group(1))) + 5
-                
-                raise ValueError(
-                    f"Превышен лимит запросов для всех доступных моделей Gemini API. "
-                    f"Попробуйте позже (через {retry_delay} секунд) или переключитесь на платный тариф. "
-                    f"Подробнее: https://ai.google.dev/gemini-api/docs/rate-limits"
-                ) from e
-    
-    # Не должно сюда дойти, но на всякий случай
-    if last_error:
-        raise ValueError("Не удалось обогатить слово: все модели исчерпали квоту") from last_error
+            result = json.loads(m.group())
+            if "transcription" in result and result["transcription"]:
+                result["transcription"] = result["transcription"].strip("[]")
+            return result
+        except json.JSONDecodeError:
+            pass
     return {"translation": "", "example": "", "transcription": ""}
 
 
@@ -230,14 +182,13 @@ def get_pronunciation_url(word: str) -> str | None:
 
 
 def get_synonyms(word: str, limit: int = 10) -> list[str]:
-    """Return English synonyms (and near-synonyms) for the word. Lowercased, no duplicates."""
+    """Return English synonyms (and near-synonyms) for the word. Lowercased, no duplicates. Uses shared model fallback."""
     if not word.strip():
         return []
     prompt = f"""List up to {limit} English synonyms or near-synonyms for the word "{word.strip()}".
 Output only the words, one per line, nothing else. Use lowercase. Do not repeat the original word."""
     try:
-        response = _model().generate_content(prompt)
-        text = (response.text or "").strip()
+        text = _generate_content_with_fallback(prompt)
         seen = set()
         result = []
         for line in text.split("\n"):

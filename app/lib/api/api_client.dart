@@ -5,13 +5,18 @@ import '../models/deck.dart';
 import '../models/card.dart' as app;
 import '../models/similar_word.dart';
 
+/// Таймаут для запросов к Gemini (генерация слов, бэкфилл, синонимы): ждём ответа долго, прерываем только при реальной ошибке.
+const Duration _kLongRequestTimeout = Duration(seconds: 180);
+const Duration _kConnectTimeout = Duration(seconds: 20);
+const Duration _kDefaultReceiveTimeout = Duration(seconds: 90);
+
 class ApiClient {
   ApiClient({required this.getToken, Dio? dio})
       : _dio = dio ??
             Dio(BaseOptions(
               baseUrl: kBaseUrl,
-              connectTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(seconds: 30),
+              connectTimeout: _kConnectTimeout,
+              receiveTimeout: _kDefaultReceiveTimeout,
             )) {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -131,19 +136,27 @@ class ApiClient {
     return app.CardModel.fromJson(r.data!);
   }
 
-  // AI
+  // AI — длинные запросы к Gemini используют увеличенный таймаут
   Future<int> generateWords({required String deckId, String? level, String? topic, int count = 20}) async {
-    final r = await _dio.post<Map<String, dynamic>>('ai/generate-words', data: {
-      'deck_id': deckId,
-      if (level != null) 'level': level,
-      if (topic != null) 'topic': topic,
-      'count': count,
-    });
+    final r = await _dio.post<Map<String, dynamic>>(
+      'ai/generate-words',
+      data: {
+        'deck_id': deckId,
+        if (level != null) 'level': level,
+        if (topic != null) 'topic': topic,
+        'count': count,
+      },
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
     return r.data!['created'] as int;
   }
 
   Future<Map<String, String>> enrichWord(String word) async {
-    final r = await _dio.post<Map<String, dynamic>>('ai/enrich-word', data: {'word': word});
+    final r = await _dio.post<Map<String, dynamic>>(
+      'ai/enrich-word',
+      data: {'word': word},
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
     return {
       'translation': r.data!['translation'] as String? ?? '',
       'example': r.data!['example'] as String? ?? '',
@@ -161,20 +174,28 @@ class ApiClient {
 
   /// Backfill transcription and pronunciation for cards that don't have them.
   Future<int> backfillTranscriptions({String? deckId, int limit = 50}) async {
-    final r = await _dio.post<Map<String, dynamic>>('ai/backfill-transcriptions', data: {
-      if (deckId != null) 'deck_id': deckId,
-      'limit': limit,
-    });
+    final r = await _dio.post<Map<String, dynamic>>(
+      'ai/backfill-transcriptions',
+      data: {
+        if (deckId != null) 'deck_id': deckId,
+        'limit': limit,
+      },
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
     return r.data!['updated'] as int;
   }
 
   /// Synonyms via Gemini; returns synonyms list and cards already in deck.
   Future<SynonymsResult> getSynonyms(String word, {required String deckId, int limit = 10}) async {
-    final r = await _dio.get<Map<String, dynamic>>('ai/synonyms', queryParameters: {
-      'word': word,
-      'deck_id': deckId,
-      'limit': limit,
-    });
+    final r = await _dio.get<Map<String, dynamic>>(
+      'ai/synonyms',
+      queryParameters: {
+        'word': word,
+        'deck_id': deckId,
+        'limit': limit,
+      },
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
     final d = r.data!;
     final cardsInDeck = (d['cards_in_deck'] as List?)
         ?.map((e) => SimilarWord.fromJson(e as Map<String, dynamic>))
@@ -187,10 +208,11 @@ class ApiClient {
 
   /// Suggest synonym groups for deck (Gemini clusters).
   Future<List<SynonymGroup>> suggestSynonymGroups(String deckId, {int limit = 30}) async {
-    final r = await _dio.post<Map<String, dynamic>>('ai/synonym-groups/suggest', queryParameters: {
-      'deck_id': deckId,
-      'limit': limit,
-    });
+    final r = await _dio.post<Map<String, dynamic>>(
+      'ai/synonym-groups/suggest',
+      queryParameters: {'deck_id': deckId, 'limit': limit},
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
     final list = r.data!['groups'] as List? ?? [];
     return list.map((e) => SynonymGroup.fromJson(e as Map<String, dynamic>)).toList();
   }

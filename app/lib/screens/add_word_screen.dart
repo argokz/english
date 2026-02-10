@@ -46,18 +46,21 @@ class _AddWordScreenState extends State<AddWordScreen> {
 
   Future<void> _enrich() async {
     final word = _wordController.text.trim();
-    if (word.isEmpty) return;
+    if (word.isEmpty || _enriching) return;
     setState(() => _enriching = true);
     try {
       final result = await context.read<AuthProvider>().api.enrichWord(word);
-      _translationController.text = result['translation'] ?? '';
-      _exampleController.text = result['example'] ?? '';
-      _transcription = result['transcription'];
-      _pronunciationUrl = result['pronunciation_url'];
+      if (mounted) {
+        _translationController.text = result['translation'] ?? '';
+        _exampleController.text = result['example'] ?? '';
+        _transcription = result['transcription'];
+        _pronunciationUrl = result['pronunciation_url'];
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка подсказки: $e')));
+    } finally {
+      if (mounted) setState(() => _enriching = false);
     }
-    setState(() => _enriching = false);
   }
 
   Future<void> _save() async {
@@ -83,8 +86,9 @@ class _AddWordScreenState extends State<AddWordScreen> {
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-    setState(() => _loading = false);
   }
 
   @override
