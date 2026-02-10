@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Gemini
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    gemini_models: str = "gemini-3-pro-preview,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.5-pro,gemini-2.0-flash"  # Список моделей через запятую для автоматического переключения
     # Logging
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     log_sql: bool = False  # Логировать SQL запросы
@@ -38,6 +39,8 @@ if os.getenv("GEMINI_API_KEY"):
     settings.gemini_api_key = os.getenv("GEMINI_API_KEY")
 if os.getenv("GEMINI_MODEL"):
     settings.gemini_model = os.getenv("GEMINI_MODEL")
+if os.getenv("GEMINI_MODELS"):
+    settings.gemini_models = os.getenv("GEMINI_MODELS")
 if os.getenv("REDIRECT_URI"):
     settings.redirect_uri = os.getenv("REDIRECT_URI")
 if os.getenv("ROOT_PATH"):

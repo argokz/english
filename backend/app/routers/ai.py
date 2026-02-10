@@ -30,7 +30,11 @@ async def generate_words(
     deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    items = gemini_service.generate_word_list(level=body.level, topic=body.topic, count=body.count)
+    try:
+        items = gemini_service.generate_word_list(level=body.level, topic=body.topic, count=body.count)
+    except ValueError as e:
+        # Ошибка превышения квоты
+        raise HTTPException(status_code=429, detail=str(e))
     created = 0
     for item in items:
         emb = gemini_service.get_embedding(f"{item['word']}: {item['translation']}")
@@ -58,7 +62,11 @@ async def enrich_word(
     if not body.word.strip():
         raise HTTPException(status_code=400, detail="word is required")
     word = body.word.strip()
-    result = gemini_service.enrich_word(word)
+    try:
+        result = gemini_service.enrich_word(word)
+    except ValueError as e:
+        # Ошибка превышения квоты
+        raise HTTPException(status_code=429, detail=str(e))
     pronunciation_url = gemini_service.get_pronunciation_url(word)
     return EnrichWordResponse(
         translation=result.get("translation", ""),
@@ -94,6 +102,9 @@ async def backfill_transcriptions(
                 db, card, transcription=transcription, pronunciation_url=pronunciation_url
             )
             updated += 1
+        except ValueError:
+            # Превышение квоты - прекращаем обработку
+            break
         except Exception:
             continue
     await db.commit()

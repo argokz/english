@@ -24,7 +24,7 @@ python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env: DATABASE_URL, SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GEMINI_API_KEY
+# Edit .env: DATABASE_URL, SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODELS
 ```
 
 Create DB and install pgvector, then run migrations:
@@ -101,6 +101,15 @@ In Google Cloud Console: **APIs & Services → Credentials → Create credential
 ### Google Auth (iOS)
 
 For native sign-in on iOS: (1) Create an **iOS** OAuth client in Google Cloud with your app **Bundle ID** (see Xcode or `ios/Runner.xcodeproj`). (2) In `app/ios/Runner/Info.plist`, add a second entry under `CFBundleURLTypes` with `CFBundleURLSchemes` = your **reversed Web client ID** (e.g. for `123-abc.apps.googleusercontent.com` use `com.googleusercontent.apps.123-abc`). See [Google Sign-In iOS docs](https://developers.google.com/identity/sign-in/ios).
+
+## Gemini API Configuration
+
+The backend automatically switches between Gemini models when quota is exceeded (429 error). Configure models in `.env`:
+
+- `GEMINI_MODEL`: Default model to start with (e.g., `gemini-2.5-flash`)
+- `GEMINI_MODELS`: Comma-separated list of models for automatic switching (e.g., `gemini-3-pro-preview,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.5-pro,gemini-2.0-flash`)
+
+When a model hits quota limit, the system automatically tries the next model in the list, cycling through all models until finding one that works.
 
 ## Project structure
 
