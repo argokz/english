@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.db.session import get_db
-from app.db.repositories import deck_repo, card_repo
+from app.db.repositories import deck_repo, card_repo, writing_repo
 from app.services import gemini_service
 from app.schemas.ai import (
     GenerateWordsRequest,
@@ -22,6 +22,8 @@ from app.schemas.ai import (
     EvaluateWritingRequest,
     EvaluateWritingResponse,
     WritingErrorItem,
+    WritingSubmissionListItem,
+    WritingSubmissionResponse,
 )
 
 router = APIRouter()
@@ -129,9 +131,10 @@ def _word_count(text: str) -> int:
 @router.post("/evaluate-writing", response_model=EvaluateWritingResponse)
 async def evaluate_writing(
     body: EvaluateWritingRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Проверка текста для IELTS Writing: оценка, исправления, ошибки, рекомендации."""
+    """Проверка текста для IELTS Writing: оценка, исправления, ошибки, рекомендации. Сохраняется в историю."""
     word_count = _word_count(body.text)
     try:
         result = gemini_service.evaluate_ielts_writing(
@@ -152,13 +155,89 @@ async def evaluate_writing(
         for e in result.get("errors") or []
         if isinstance(e, dict)
     ]
+    errors_data = [e.model_dump() for e in errors]
+    sub = await writing_repo.create_writing_submission(
+        db,
+        current_user.id,
+        original_text=body.text,
+        word_count=word_count,
+        evaluation=result.get("evaluation", ""),
+        corrected_text=result.get("corrected_text", ""),
+        recommendations=result.get("recommendations", ""),
+        time_used_seconds=body.time_used_seconds,
+        time_limit_minutes=body.time_limit_minutes,
+        word_limit_min=body.word_limit_min,
+        word_limit_max=body.word_limit_max,
+        task_type=body.task_type,
+        errors=errors_data,
+    )
+    await db.commit()
     return EvaluateWritingResponse(
+        submission_id=str(sub.id),
         word_count=word_count,
         time_used_seconds=body.time_used_seconds,
         evaluation=result.get("evaluation", ""),
         corrected_text=result.get("corrected_text", ""),
         errors=errors,
         recommendations=result.get("recommendations", ""),
+    )
+
+
+@router.get("/writing-history", response_model=list[WritingSubmissionListItem])
+async def get_writing_history(
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Список сохранённых проверок текста (история)."""
+    subs = await writing_repo.get_writing_submissions_by_user(db, current_user.id, limit=limit, offset=offset)
+    return [
+        WritingSubmissionListItem(
+            id=str(s.id),
+            word_count=s.word_count,
+            time_used_seconds=s.time_used_seconds,
+            created_at=s.created_at,
+            evaluation_preview=(s.evaluation or "")[:100] + ("…" if len(s.evaluation or "") > 100 else ""),
+        )
+        for s in subs
+    ]
+
+
+@router.get("/writing-history/{submission_id}", response_model=WritingSubmissionResponse)
+async def get_writing_submission(
+    submission_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Одна запись из истории: полный текст, оценка, исправления, ошибки, рекомендации."""
+    sub = await writing_repo.get_writing_submission_by_id(db, submission_id, current_user.id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Not found")
+    errors = [
+        WritingErrorItem(
+            type=e.get("type", ""),
+            original=e.get("original", ""),
+            correction=e.get("correction", ""),
+            explanation=e.get("explanation", ""),
+        )
+        for e in (sub.errors or [])
+        if isinstance(e, dict)
+    ]
+    return WritingSubmissionResponse(
+        id=str(sub.id),
+        original_text=sub.original_text,
+        word_count=sub.word_count,
+        time_used_seconds=sub.time_used_seconds,
+        time_limit_minutes=sub.time_limit_minutes,
+        word_limit_min=sub.word_limit_min,
+        word_limit_max=sub.word_limit_max,
+        task_type=sub.task_type,
+        evaluation=sub.evaluation,
+        corrected_text=sub.corrected_text,
+        errors=errors,
+        recommendations=sub.recommendations,
+        created_at=sub.created_at,
     )
 
 

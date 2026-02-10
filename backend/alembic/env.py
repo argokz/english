@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.config import settings
 from app.db.base import Base
-from app.models import User, Deck, Card, ReviewLog
+from app.models import User, Deck, Card, ReviewLog, WritingSubmission
 
 config = context.config
 if config.config_file_name is not None:

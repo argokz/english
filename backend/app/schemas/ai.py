@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel
 
 
@@ -70,9 +71,34 @@ class WritingErrorItem(BaseModel):
 
 
 class EvaluateWritingResponse(BaseModel):
+    submission_id: str | None = None
     word_count: int
     time_used_seconds: int | None = None
     evaluation: str
     corrected_text: str
     errors: list[WritingErrorItem]
     recommendations: str
+
+
+class WritingSubmissionListItem(BaseModel):
+    id: str
+    word_count: int
+    time_used_seconds: int | None
+    created_at: datetime
+    evaluation_preview: str
+
+
+class WritingSubmissionResponse(BaseModel):
+    id: str
+    original_text: str
+    word_count: int
+    time_used_seconds: int | None
+    time_limit_minutes: int | None
+    word_limit_min: int | None
+    word_limit_max: int | None
+    task_type: str | None
+    evaluation: str
+    corrected_text: str
+    errors: list[WritingErrorItem]
+    recommendations: str
+    created_at: datetime

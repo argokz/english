@@ -232,7 +232,19 @@ class ApiClient {
     await _dio.post('decks/$deckId/synonym-groups', data: {'groups': groups});
   }
 
-  /// IELTS Writing: проверка текста — оценка, исправления, ошибки, рекомендации.
+  /// Список сохранённых проверок (история IELTS Письмо).
+  Future<List<WritingSubmissionListItem>> getWritingHistory({int limit = 50, int offset = 0}) async {
+    final r = await _dio.get<List>('ai/writing-history', queryParameters: {'limit': limit, 'offset': offset});
+    return (r.data ?? []).map((e) => WritingSubmissionListItem.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Одна запись из истории (полные данные).
+  Future<WritingSubmissionDetail> getWritingSubmission(String submissionId) async {
+    final r = await _dio.get<Map<String, dynamic>>('ai/writing-history/$submissionId');
+    return WritingSubmissionDetail.fromJson(r.data!);
+  }
+
+  /// IELTS Writing: проверка текста — оценка, исправления, ошибки, рекомендации. Сохраняется в историю.
   Future<EvaluateWritingResult> evaluateWriting({
     required String text,
     int? timeLimitMinutes,
@@ -303,6 +315,7 @@ class WritingErrorItem {
 }
 
 class EvaluateWritingResult {
+  final String? submissionId;
   final int wordCount;
   final int? timeUsedSeconds;
   final String evaluation;
@@ -310,6 +323,7 @@ class EvaluateWritingResult {
   final List<WritingErrorItem> errors;
   final String recommendations;
   EvaluateWritingResult({
+    this.submissionId,
     required this.wordCount,
     this.timeUsedSeconds,
     required this.evaluation,
@@ -320,12 +334,86 @@ class EvaluateWritingResult {
   factory EvaluateWritingResult.fromJson(Map<String, dynamic> json) {
     final errorsList = json['errors'] as List? ?? [];
     return EvaluateWritingResult(
+      submissionId: json['submission_id'] as String?,
       wordCount: json['word_count'] as int? ?? 0,
       timeUsedSeconds: json['time_used_seconds'] as int?,
       evaluation: json['evaluation'] as String? ?? '',
       correctedText: json['corrected_text'] as String? ?? '',
       errors: errorsList.map((e) => WritingErrorItem.fromJson(e as Map<String, dynamic>)).toList(),
       recommendations: json['recommendations'] as String? ?? '',
+    );
+  }
+}
+
+class WritingSubmissionListItem {
+  final String id;
+  final int wordCount;
+  final int? timeUsedSeconds;
+  final DateTime createdAt;
+  final String evaluationPreview;
+  WritingSubmissionListItem({
+    required this.id,
+    required this.wordCount,
+    this.timeUsedSeconds,
+    required this.createdAt,
+    required this.evaluationPreview,
+  });
+  factory WritingSubmissionListItem.fromJson(Map<String, dynamic> json) {
+    return WritingSubmissionListItem(
+      id: json['id'] as String,
+      wordCount: json['word_count'] as int? ?? 0,
+      timeUsedSeconds: json['time_used_seconds'] as int?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      evaluationPreview: json['evaluation_preview'] as String? ?? '',
+    );
+  }
+}
+
+class WritingSubmissionDetail {
+  final String id;
+  final String originalText;
+  final int wordCount;
+  final int? timeUsedSeconds;
+  final int? timeLimitMinutes;
+  final int? wordLimitMin;
+  final int? wordLimitMax;
+  final String? taskType;
+  final String evaluation;
+  final String correctedText;
+  final List<WritingErrorItem> errors;
+  final String recommendations;
+  final DateTime createdAt;
+  WritingSubmissionDetail({
+    required this.id,
+    required this.originalText,
+    required this.wordCount,
+    this.timeUsedSeconds,
+    this.timeLimitMinutes,
+    this.wordLimitMin,
+    this.wordLimitMax,
+    this.taskType,
+    required this.evaluation,
+    required this.correctedText,
+    required this.errors,
+    required this.recommendations,
+    required this.createdAt,
+  });
+  factory WritingSubmissionDetail.fromJson(Map<String, dynamic> json) {
+    final errorsList = json['errors'] as List? ?? [];
+    return WritingSubmissionDetail(
+      id: json['id'] as String,
+      originalText: json['original_text'] as String? ?? '',
+      wordCount: json['word_count'] as int? ?? 0,
+      timeUsedSeconds: json['time_used_seconds'] as int?,
+      timeLimitMinutes: json['time_limit_minutes'] as int?,
+      wordLimitMin: json['word_limit_min'] as int?,
+      wordLimitMax: json['word_limit_max'] as int?,
+      taskType: json['task_type'] as String?,
+      evaluation: json['evaluation'] as String? ?? '',
+      correctedText: json['corrected_text'] as String? ?? '',
+      errors: errorsList.map((e) => WritingErrorItem.fromJson(e as Map<String, dynamic>)).toList(),
+      recommendations: json['recommendations'] as String? ?? '',
+      createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
 }

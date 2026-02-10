@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../core/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/loading_overlay.dart';
+import 'writing_history_screen.dart';
 
 class IeltsWritingScreen extends StatefulWidget {
   const IeltsWritingScreen({super.key});
@@ -105,7 +106,12 @@ class _IeltsWritingScreenState extends State<IeltsWritingScreen> {
             wordLimitMax: _wordLimitMax > 0 ? _wordLimitMax : null,
             taskType: _taskType.isEmpty ? null : _taskType,
           );
-      if (mounted) setState(() { _result = res; _loading = false; });
+      if (mounted) {
+        setState(() { _result = res; _loading = false; });
+        if (res.submissionId != null) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сохранено в историю')));
+        }
+      }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
@@ -128,6 +134,7 @@ class _IeltsWritingScreenState extends State<IeltsWritingScreen> {
       appBar: AppBar(
         title: const Text('IELTS Письмо'),
         actions: [
+          IconButton(icon: const Icon(Icons.history), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WritingHistoryScreen())), tooltip: 'История'),
           IconButton(icon: const Icon(Icons.settings), onPressed: _showSettings, tooltip: 'Настройки'),
         ],
       ),
