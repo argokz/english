@@ -30,6 +30,7 @@ class CardResponse(BaseModel):
     created_at: datetime
     state: str
     due: datetime
+    synonym_group_id: UUID | None = None
 
     class Config:
         from_attributes = True

@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies import get_current_user
@@ -7,6 +7,7 @@ from app.models.deck import Deck
 from app.models.card import Card
 from app.schemas.deck import DeckCreate, DeckUpdate, DeckResponse
 from app.schemas.card import CardCreate, CardUpdate, CardResponse, ReviewRequest
+from app.schemas.ai import ApplySynonymGroupsRequest
 from app.db.session import get_db
 from app.db.repositories import deck_repo, card_repo
 from app.services import gemini_service
@@ -121,3 +122,29 @@ async def get_due_cards(
         raise HTTPException(status_code=404, detail="Deck not found")
     cards = await card_repo.get_due_cards(db, deck_id, current_user.id)
     return cards
+
+
+@router.post("/{deck_id}/synonym-groups")
+async def apply_synonym_groups(
+    deck_id: UUID,
+    body: ApplySynonymGroupsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set synonym_group_id for cards: each inner list of card_ids gets one group id. Clears previous groups in deck."""
+    deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    all_cards = await card_repo.get_cards_by_deck(db, deck_id)
+    for card in all_cards:
+        await card_repo.update_card(db, card, synonym_group_id=None)
+    for card_ids in body.groups:
+        if len(card_ids) < 2:
+            continue
+        group_id = uuid4()
+        for cid in card_ids:
+            card = await card_repo.get_card_by_id(db, UUID(cid), current_user.id)
+            if card and card.deck_id == deck_id:
+                await card_repo.update_card(db, card, synonym_group_id=group_id)
+    await db.commit()
+    return {"applied": len(body.groups)}
