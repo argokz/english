@@ -51,3 +51,28 @@ class SuggestSynonymGroupsResponse(BaseModel):
 
 class ApplySynonymGroupsRequest(BaseModel):
     groups: list[list[str]]  # each inner list is card_ids in one group
+
+
+class EvaluateWritingRequest(BaseModel):
+    text: str
+    time_limit_minutes: int | None = None
+    time_used_seconds: int | None = None  # фактически затраченное время
+    word_limit_min: int | None = None
+    word_limit_max: int | None = None
+    task_type: str | None = None  # task1, task2, или null
+
+
+class WritingErrorItem(BaseModel):
+    type: str
+    original: str
+    correction: str
+    explanation: str
+
+
+class EvaluateWritingResponse(BaseModel):
+    word_count: int
+    time_used_seconds: int | None = None
+    evaluation: str
+    corrected_text: str
+    errors: list[WritingErrorItem]
+    recommendations: str

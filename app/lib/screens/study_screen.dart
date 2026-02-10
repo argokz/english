@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../core/app_theme.dart';
 import '../models/card.dart' as app;
 import '../models/study_mode.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_overlay.dart';
 
 class StudyScreen extends StatefulWidget {
   const StudyScreen({super.key, required this.deckId, required this.deckName});
@@ -167,28 +170,27 @@ class _StudyScreenState extends State<StudyScreen> {
     if (_loading) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.deckName)),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const LoadingOverlay(message: 'Загрузка карточек…'),
       );
     }
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.deckName)),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_error!),
-              const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Повторить')),
-            ],
-          ),
+        body: EmptyState(
+          icon: Icons.error_outline,
+          message: _error!,
+          actionLabel: 'Повторить',
+          onAction: _load,
         ),
       );
     }
     if (_queue == null || _queue!.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.deckName)),
-        body: const Center(child: Text('На сегодня карточек нет. Отлично!')),
+        body: const EmptyState(
+          icon: Icons.celebration,
+          message: 'На сегодня карточек нет. Отлично!',
+        ),
       );
     }
     final card = _queue![_index];

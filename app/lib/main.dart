@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:app_links/app_links.dart';
+import 'core/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/ielts_writing_screen.dart';
 
 void main() {
   final authProvider = AuthProvider();
@@ -68,12 +70,14 @@ class _EnglishWordsAppState extends State<EnglishWordsApp> {
           builder: (_, __) => const HomeScreen(),
           routes: [
             GoRoute(path: 'settings', builder: (_, __) => const SettingsScreen()),
+            GoRoute(path: 'writing', builder: (_, __) => const IeltsWritingScreen()),
           ],
         ),
       ],
     );
     return MaterialApp.router(
       title: 'English Words',
+      theme: AppTheme.theme,
       routerConfig: router,
     );
   }

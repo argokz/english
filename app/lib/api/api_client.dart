@@ -137,7 +137,8 @@ class ApiClient {
   }
 
   // AI — длинные запросы к Gemini используют увеличенный таймаут
-  Future<int> generateWords({required String deckId, String? level, String? topic, int count = 20}) async {
+  /// Возвращает количество добавленных и количество пропущенных дубликатов (уже в колоде).
+  Future<GenerateWordsResult> generateWords({required String deckId, String? level, String? topic, int count = 20}) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'ai/generate-words',
       data: {
@@ -148,7 +149,16 @@ class ApiClient {
       },
       options: Options(receiveTimeout: _kLongRequestTimeout),
     );
-    return r.data!['created'] as int;
+    final d = r.data!;
+    return GenerateWordsResult(
+      created: d['created'] as int? ?? 0,
+      skippedDuplicates: d['skipped_duplicates'] as int? ?? 0,
+    );
+  }
+
+  Future<int> removeDuplicates(String deckId) async {
+    final r = await _dio.post<Map<String, dynamic>>('decks/$deckId/remove-duplicates');
+    return r.data!['removed'] as int? ?? 0;
   }
 
   Future<Map<String, String>> enrichWord(String word) async {
@@ -221,6 +231,36 @@ class ApiClient {
   Future<void> applySynonymGroups(String deckId, List<List<String>> groups) async {
     await _dio.post('decks/$deckId/synonym-groups', data: {'groups': groups});
   }
+
+  /// IELTS Writing: проверка текста — оценка, исправления, ошибки, рекомендации.
+  Future<EvaluateWritingResult> evaluateWriting({
+    required String text,
+    int? timeLimitMinutes,
+    int? timeUsedSeconds,
+    int? wordLimitMin,
+    int? wordLimitMax,
+    String? taskType,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'ai/evaluate-writing',
+      data: {
+        'text': text,
+        if (timeLimitMinutes != null) 'time_limit_minutes': timeLimitMinutes,
+        if (timeUsedSeconds != null) 'time_used_seconds': timeUsedSeconds,
+        if (wordLimitMin != null) 'word_limit_min': wordLimitMin,
+        if (wordLimitMax != null) 'word_limit_max': wordLimitMax,
+        if (taskType != null && taskType.isNotEmpty) 'task_type': taskType,
+      },
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
+    return EvaluateWritingResult.fromJson(r.data!);
+  }
+}
+
+class GenerateWordsResult {
+  final int created;
+  final int skippedDuplicates;
+  GenerateWordsResult({required this.created, required this.skippedDuplicates});
 }
 
 class SynonymsResult {
@@ -237,6 +277,55 @@ class SynonymGroup {
     return SynonymGroup(
       words: List<String>.from(json['words'] as List? ?? []),
       cardIds: List<String>.from(json['card_ids'] as List? ?? []),
+    );
+  }
+}
+
+class WritingErrorItem {
+  final String type;
+  final String original;
+  final String correction;
+  final String explanation;
+  WritingErrorItem({
+    required this.type,
+    required this.original,
+    required this.correction,
+    required this.explanation,
+  });
+  factory WritingErrorItem.fromJson(Map<String, dynamic> json) {
+    return WritingErrorItem(
+      type: json['type'] as String? ?? '',
+      original: json['original'] as String? ?? '',
+      correction: json['correction'] as String? ?? '',
+      explanation: json['explanation'] as String? ?? '',
+    );
+  }
+}
+
+class EvaluateWritingResult {
+  final int wordCount;
+  final int? timeUsedSeconds;
+  final String evaluation;
+  final String correctedText;
+  final List<WritingErrorItem> errors;
+  final String recommendations;
+  EvaluateWritingResult({
+    required this.wordCount,
+    this.timeUsedSeconds,
+    required this.evaluation,
+    required this.correctedText,
+    required this.errors,
+    required this.recommendations,
+  });
+  factory EvaluateWritingResult.fromJson(Map<String, dynamic> json) {
+    final errorsList = json['errors'] as List? ?? [];
+    return EvaluateWritingResult(
+      wordCount: json['word_count'] as int? ?? 0,
+      timeUsedSeconds: json['time_used_seconds'] as int?,
+      evaluation: json['evaluation'] as String? ?? '',
+      correctedText: json['corrected_text'] as String? ?? '',
+      errors: errorsList.map((e) => WritingErrorItem.fromJson(e as Map<String, dynamic>)).toList(),
+      recommendations: json['recommendations'] as String? ?? '',
     );
   }
 }

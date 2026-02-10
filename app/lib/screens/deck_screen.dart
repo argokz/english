@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../api/api_client.dart';
+import '../core/app_theme.dart';
 import '../models/card.dart' as app;
 import '../providers/auth_provider.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_overlay.dart';
 import 'add_word_screen.dart';
 import 'generate_words_screen.dart';
 import 'study_screen.dart';
@@ -25,11 +28,25 @@ class _DeckScreenState extends State<DeckScreen> {
   String? _error;
   bool _groupBySynonyms = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void dispose() {
+    _searchController.dispose();
     _audioPlayer.dispose();
     super.dispose();
+  }
+
+  List<app.CardModel> _getFilteredCards() {
+    final cards = _cards ?? [];
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return cards;
+    return cards.where((c) {
+      final word = (c.word).toLowerCase();
+      final translation = (c.translation).toLowerCase();
+      return word.contains(q) || translation.contains(q);
+    }).toList();
   }
 
   Future<void> _playWord(app.CardModel card) async {
@@ -56,16 +73,9 @@ class _DeckScreenState extends State<DeckScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Обновление транскрипций…', style: TextStyle(color: Colors.grey)),
-            Text('Может занять несколько минут', style: TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
+      builder: (_) => const LoadingOverlay(
+        message: 'Обновление транскрипций…',
+        subtitle: 'Может занять несколько минут',
       ),
     );
     try {
@@ -90,21 +100,28 @@ class _DeckScreenState extends State<DeckScreen> {
     }
   }
 
+  Future<void> _runRemoveDuplicates() async {
+    try {
+      final removed = await context.read<AuthProvider>().api.removeDuplicates(widget.deckId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(removed > 0 ? 'Удалено дубликатов: $removed' : 'Дубликатов нет')),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    }
+  }
+
   Future<void> _showSuggestSynonymGroups() async {
     final api = context.read<AuthProvider>().api;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Поиск групп синонимов…', style: TextStyle(color: Colors.grey)),
-            Text('Может занять 1–2 минуты', style: TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
+      builder: (_) => const LoadingOverlay(
+        message: 'Поиск групп синонимов…',
+        subtitle: 'Может занять 1–2 минуты',
       ),
     );
     List<SynonymGroup>? suggested;
@@ -131,6 +148,7 @@ class _DeckScreenState extends State<DeckScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Предложенные группы синонимов'),
+        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -145,6 +163,7 @@ class _DeckScreenState extends State<DeckScreen> {
             },
           ),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -211,35 +230,52 @@ class _DeckScreenState extends State<DeckScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (value) async {
-              if (value == 'backfill') _runBackfillTranscriptions(); else if (value == 'synonym_groups') {
-                _showSuggestSynonymGroups();
-              }
+              if (value == 'backfill') _runBackfillTranscriptions();
+              else if (value == 'remove_duplicates') _runRemoveDuplicates();
+              else if (value == 'synonym_groups') _showSuggestSynonymGroups();
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'backfill', child: Text('Обновить транскрипции')),
               const PopupMenuItem(value: 'synonym_groups', child: Text('Найти группы синонимов')),
+              const PopupMenuItem(value: 'remove_duplicates', child: Text('Удалить дубликаты слов')),
             ],
           ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const LoadingOverlay(message: 'Загрузка колоды…')
           : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!),
-                      const SizedBox(height: 16),
-                      FilledButton(onPressed: _load, child: const Text('Повторить')),
-                    ],
-                  ),
+              ? EmptyState(
+                  icon: Icons.error_outline,
+                  message: _error!,
+                  actionLabel: 'Повторить',
+                  onAction: _load,
                 )
               : RefreshIndicator(
                   onRefresh: _load,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Поиск по слову или переводу',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchQuery.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  ),
+                          ),
+                          onChanged: (v) => setState(() => _searchQuery = v),
+                        ),
+                      ),
                       if ((_cards ?? []).any((c) => c.synonymGroupId != null)) ...[
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -267,11 +303,14 @@ class _DeckScreenState extends State<DeckScreen> {
                     ],
                   ),
                 ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'add',
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            FloatingActionButton.extended(
+              heroTag: 'add',
             onPressed: () async {
               await Navigator.push(
                 context,
@@ -314,7 +353,8 @@ class _DeckScreenState extends State<DeckScreen> {
             icon: const Icon(Icons.lightbulb_outline),
             label: const Text('Похожие слова'),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -322,6 +362,7 @@ class _DeckScreenState extends State<DeckScreen> {
   Widget _buildCardTile(app.CardModel c) {
     return Card(
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         title: Text(c.word),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,7 +401,13 @@ class _DeckScreenState extends State<DeckScreen> {
   }
 
   Widget _buildFlatList() {
-    final cards = _cards ?? [];
+    final cards = _getFilteredCards();
+    if (cards.isEmpty) {
+      return EmptyState(
+        icon: _searchQuery.isEmpty ? Icons.menu_book_outlined : Icons.search_off,
+        message: _searchQuery.isEmpty ? 'Нет карточек в колоде' : 'Ничего не найдено по «$_searchQuery»',
+      );
+    }
     return ListView.builder(
       padding: const EdgeInsets.all(8),
       itemCount: cards.length,
@@ -369,7 +416,13 @@ class _DeckScreenState extends State<DeckScreen> {
   }
 
   Widget _buildGroupedList() {
-    final cards = _cards ?? [];
+    final cards = _getFilteredCards();
+    if (cards.isEmpty) {
+      return EmptyState(
+        icon: _searchQuery.isEmpty ? Icons.menu_book_outlined : Icons.search_off,
+        message: _searchQuery.isEmpty ? 'Нет карточек в колоде' : 'Ничего не найдено по «$_searchQuery»',
+      );
+    }
     final byGroup = <String?, List<app.CardModel>>{};
     for (final c in cards) {
       byGroup.putIfAbsent(c.synonymGroupId, () => []).add(c);

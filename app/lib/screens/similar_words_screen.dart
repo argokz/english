@@ -1,8 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
+import '../core/app_theme.dart';
 import '../models/similar_word.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_overlay.dart';
 
 enum SimilarMode { embedding, synonyms }
 
@@ -68,7 +72,13 @@ class _SimilarWordsScreenState extends State<SimilarWordsScreen> {
         setState(() => _results = _results?.where((e) => e.cardId != sw.cardId).toList());
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      if (mounted) {
+        String msg = 'Ошибка: $e';
+        if (e is DioException && e.response?.statusCode == 409) {
+          msg = (e.response?.data as Map<String, dynamic>?)?['detail'] as String? ?? 'Слово уже есть в колоде';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
     }
   }
 
@@ -76,60 +86,97 @@ class _SimilarWordsScreenState extends State<SimilarWordsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Похожие слова')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: AppTheme.paddingScreen,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _wordController,
-                    decoration: const InputDecoration(hintText: 'Введите слово', border: OutlineInputBorder()),
-                    onSubmitted: (_) => _search(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _wordController,
+                        decoration: const InputDecoration(
+                          hintText: 'Введите слово',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onSubmitted: (_) => _search(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      onPressed: _loading ? null : _search,
+                      style: FilledButton.styleFrom(minimumSize: const Size(0, AppTheme.buttonMinHeight)),
+                      child: const Text('Искать'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<SimilarMode>(
+                  segments: const [
+                    ButtonSegment(value: SimilarMode.embedding, label: Text('По смыслу'), icon: Icon(Icons.auto_awesome, size: 20)),
+                    ButtonSegment(value: SimilarMode.synonyms, label: Text('Синонимы'), icon: Icon(Icons.sort_by_alpha, size: 20)),
+                  ],
+                  selected: {_mode},
+                  onSelectionChanged: (s) => setState(() => _mode = s.first),
+                  style: ButtonStyle(
+                    padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 12, horizontal: 16)),
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(onPressed: _loading ? null : _search, child: const Text('Искать')),
               ],
             ),
-            const SizedBox(height: 8),
-            SegmentedButton<SimilarMode>(
-              segments: const [
-                ButtonSegment(value: SimilarMode.embedding, label: Text('По смыслу'), icon: Icon(Icons.auto_awesome)),
-                ButtonSegment(value: SimilarMode.synonyms, label: Text('Синонимы'), icon: Icon(Icons.sort_by_alpha)),
-              ],
-              selected: {_mode},
-              onSelectionChanged: (s) => setState(() => _mode = s.first),
-            ),
-            const SizedBox(height: 16),
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-            if (_mode == SimilarMode.synonyms && _synonymsResult != null) _buildSynonymsContent(),
-            if (_mode == SimilarMode.embedding && _results != null && _results!.isEmpty)
-              const Text('Похожих слов не найдено или ещё нет эмбеддингов. Добавьте слова в колоду.'),
-            if (_mode == SimilarMode.embedding && _results != null && _results!.isNotEmpty)
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _results!.length,
-                  itemBuilder: (context, i) {
-                    final sw = _results![i];
-                    return Card(
-                      child: ListTile(
-                        title: Text(sw.word),
-                        subtitle: Text(sw.translation),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.add),
-                          onPressed: () => _addToDeck(sw),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: _loading
+                ? const LoadingOverlay(message: 'Поиск…', compact: true)
+                : _error != null
+                    ? EmptyState(
+                        icon: Icons.error_outline,
+                        message: _error!,
+                        actionLabel: 'Повторить',
+                        onAction: () {
+                          setState(() => _error = null);
+                          _search();
+                        },
+                      )
+                    : _mode == SimilarMode.synonyms && _synonymsResult != null
+                        ? _buildSynonymsContent()
+                        : _mode == SimilarMode.embedding && _results != null && _results!.isEmpty
+                            ? const EmptyState(
+                                icon: Icons.search_off,
+                                message: 'Похожих слов не найдено или ещё нет эмбеддингов. Добавьте слова в колоду.',
+                              )
+                            : _mode == SimilarMode.embedding && _results != null && _results!.isNotEmpty
+                                ? ListView.builder(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    itemCount: _results!.length,
+                                    itemBuilder: (context, i) {
+                                      final sw = _results![i];
+                                      return Card(
+                                        child: ListTile(
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                          title: Text(sw.word),
+                                          subtitle: Text(sw.translation),
+                                          trailing: FilledButton.tonalIcon(
+                                            icon: const Icon(Icons.add, size: 20),
+                                            label: const Text('В колоду'),
+                                            onPressed: () => _addToDeck(sw),
+                                            style: FilledButton.styleFrom(
+                                              minimumSize: const Size(0, 40),
+                                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -139,37 +186,38 @@ class _SimilarWordsScreenState extends State<SimilarWordsScreen> {
     final hasSynonyms = res.synonyms.isNotEmpty;
     final hasInDeck = res.cardsInDeck.isNotEmpty;
     if (!hasSynonyms && !hasInDeck) {
-      return const Expanded(child: Center(child: Text('Синонимы не найдены')));
+      return const EmptyState(icon: Icons.sort_by_alpha, message: 'Синонимы не найдены');
     }
-    return Expanded(
-      child: ListView(
-        children: [
-          if (hasSynonyms) ...[
-            const Text('Синонимы', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: res.synonyms.map((w) => Chip(label: Text(w))).toList(),
-            ),
-            const SizedBox(height: 16),
-          ],
-          if (hasInDeck) ...[
-            const Text('Уже в колоде', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 6),
-            ...res.cardsInDeck.map((sw) => Card(
-              child: ListTile(
-                title: Text(sw.word),
-                subtitle: Text(sw.translation),
-                trailing: IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _addToDeck(sw),
-                ),
-              ),
-            )),
-          ],
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        if (hasSynonyms) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text('Синонимы', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: res.synonyms.map((w) => Chip(label: Text(w), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8))).toList(),
+          ),
+          const SizedBox(height: 20),
         ],
-      ),
+        if (hasInDeck) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text('Уже в колоде', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          ),
+          ...res.cardsInDeck.map((sw) => Card(
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              title: Text(sw.word),
+              subtitle: Text(sw.translation),
+              trailing: Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary, size: 24),
+            ),
+          )),
+        ],
+      ],
     );
   }
 }

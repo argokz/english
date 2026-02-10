@@ -201,6 +201,72 @@ Output only the words, one per line, nothing else. Use lowercase. Do not repeat 
         return []
 
 
+def evaluate_ielts_writing(
+    text: str,
+    word_limit_min: int | None = None,
+    word_limit_max: int | None = None,
+    task_type: str | None = None,
+) -> dict:
+    """
+    Оценка текста для IELTS Writing: общая оценка, исправленный текст, список ошибок, рекомендации.
+    Возвращает dict: evaluation, corrected_text, errors (list of {type, original, correction, explanation}), recommendations.
+    """
+    if not text or not text.strip():
+        return {
+            "evaluation": "",
+            "corrected_text": "",
+            "errors": [],
+            "recommendations": "Введите текст для проверки.",
+        }
+    limits = ""
+    if word_limit_min is not None or word_limit_max is not None:
+        limits = f" Target word count: min {word_limit_min or 0}, max {word_limit_max or 'none'}."
+    task = f" Task type: {task_type}." if task_type else ""
+    prompt = f"""You are an IELTS Writing examiner. Analyze the following English text{task}.{limits}
+
+TEXT:
+---
+{text.strip()}
+---
+
+Respond in JSON only with this exact structure (use Russian for evaluation, errors explanations, and recommendations):
+{{
+  "evaluation": "Краткая общая оценка текста: соответствие заданию, связность, грамматика, лексика. 2-4 предложения.",
+  "corrected_text": "Полный текст с исправленными грамматическими и орфографическими ошибками. Сохраняйте структуру и смысл автора.",
+  "errors": [
+    {{ "type": "grammar|spelling|punctuation|vocabulary|style", "original": "фраза с ошибкой", "correction": "исправленный вариант", "explanation": "краткое объяснение на русском" }}
+  ],
+  "recommendations": "3-5 конкретных рекомендаций по улучшению (на русском)."
+}}
+If there are no errors, return "errors": [].
+Output only valid JSON, no markdown or extra text."""
+
+    try:
+        raw = _generate_content_with_fallback(prompt)
+        # Убрать markdown-обёртку если есть
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+        if raw.endswith("```"):
+            raw = raw.rsplit("```", 1)[0]
+        raw = raw.strip()
+        data = json.loads(raw)
+        return {
+            "evaluation": data.get("evaluation", ""),
+            "corrected_text": data.get("corrected_text", ""),
+            "errors": data.get("errors") if isinstance(data.get("errors"), list) else [],
+            "recommendations": data.get("recommendations", ""),
+        }
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"evaluate_ielts_writing parse error: {e}")
+        return {
+            "evaluation": "Не удалось разобрать ответ. Попробуйте ещё раз.",
+            "corrected_text": text,
+            "errors": [],
+            "recommendations": "",
+        }
+
+
 def get_embedding(text: str) -> list[float] | None:
     """Get embedding vector for text (e.g. word or 'word: translation'). Returns 768-dim list or None."""
     try:

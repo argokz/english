@@ -1,6 +1,8 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../core/app_theme.dart';
 import '../providers/auth_provider.dart';
 
 class AddWordScreen extends StatefulWidget {
@@ -85,7 +87,13 @@ class _AddWordScreenState extends State<AddWordScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      if (mounted) {
+        String msg = 'Ошибка: $e';
+        if (e is DioException && e.response?.statusCode == 409) {
+          msg = (e.response?.data as Map<String, dynamic>?)?['detail'] as String? ?? 'Слово уже есть в колоде';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -95,65 +103,85 @@ class _AddWordScreenState extends State<AddWordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Добавить слово')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _wordController,
-                      decoration: const InputDecoration(labelText: 'Слово (англ.)', border: OutlineInputBorder()),
-                      textCapitalization: TextCapitalization.none,
+      body: SingleChildScrollView(
+        padding: AppTheme.paddingScreen,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _wordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Слово (англ.)',
+                      hintText: 'apple',
                     ),
+                    textCapitalization: TextCapitalization.none,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.volume_up),
-                    onPressed: _playWord,
-                    tooltip: 'Произношение',
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  icon: const Icon(Icons.volume_up),
+                  onPressed: _playWord,
+                  tooltip: 'Произношение',
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(AppTheme.buttonMinHeight, AppTheme.buttonMinHeight),
                   ),
-                ],
-              ),
-              if (_transcription != null && _transcription!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Text('Транскрипция: ', style: TextStyle(color: Colors.grey[600], fontSize: 14)),
-                    Text('/$_transcription/', style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 16)),
-                  ],
                 ),
               ],
-              const SizedBox(height: 12),
+            ),
+            if (_transcription != null && _transcription!.isNotEmpty) ...[
+              const SizedBox(height: 8),
               Row(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _translationController,
-                      decoration: const InputDecoration(labelText: 'Перевод', border: OutlineInputBorder()),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonal(
-                    onPressed: _enriching ? null : _enrich,
-                    child: _enriching ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Подсказать'),
-                  ),
+                  Text('Транскрипция: ', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  Text('/$_transcription/', style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic)),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _exampleController,
-                decoration: const InputDecoration(labelText: 'Пример (необяз.)', border: OutlineInputBorder()),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _loading ? null : _save,
-                child: _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Сохранить'),
-              ),
             ],
-          ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _translationController,
+                    decoration: const InputDecoration(labelText: 'Перевод', hintText: 'яблоко'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonal(
+                  onPressed: _enriching ? null : _enrich,
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, AppTheme.buttonMinHeight)),
+                  child: _enriching
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Подсказать'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _exampleController,
+              decoration: const InputDecoration(
+                labelText: 'Пример (необяз.)',
+                alignLabelWithHint: true,
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 28),
+            FilledButton(
+              onPressed: _loading ? null : _save,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, AppTheme.buttonMinHeight + 8),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: _loading
+                  ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Сохранить'),
+            ),
+          ],
         ),
       ),
     );

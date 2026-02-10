@@ -19,6 +19,9 @@ from app.schemas.ai import (
     SuggestSynonymGroupsResponse,
     SynonymGroupItem,
     ApplySynonymGroupsRequest,
+    EvaluateWritingRequest,
+    EvaluateWritingResponse,
+    WritingErrorItem,
 )
 
 router = APIRouter()
@@ -40,7 +43,11 @@ async def generate_words(
         # Ошибка превышения квоты
         raise HTTPException(status_code=429, detail=str(e))
     created = 0
+    skipped_duplicates = 0
     for item in items:
+        if await card_repo.exists_card_in_deck(db, deck_id, item["word"]):
+            skipped_duplicates += 1
+            continue
         emb = gemini_service.get_embedding(f"{item['word']}: {item['translation']}")
         pronunciation_url = gemini_service.get_pronunciation_url(item["word"])
         await card_repo.create_card(
@@ -55,7 +62,7 @@ async def generate_words(
         )
         created += 1
     await db.commit()
-    return {"created": created}
+    return {"created": created, "skipped_duplicates": skipped_duplicates}
 
 
 @router.post("/enrich-word", response_model=EnrichWordResponse)
@@ -113,6 +120,46 @@ async def backfill_transcriptions(
             continue
     await db.commit()
     return BackfillTranscriptionsResponse(updated=updated)
+
+
+def _word_count(text: str) -> int:
+    return len([w for w in (text or "").split() if w.strip()])
+
+
+@router.post("/evaluate-writing", response_model=EvaluateWritingResponse)
+async def evaluate_writing(
+    body: EvaluateWritingRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Проверка текста для IELTS Writing: оценка, исправления, ошибки, рекомендации."""
+    word_count = _word_count(body.text)
+    try:
+        result = gemini_service.evaluate_ielts_writing(
+            body.text,
+            word_limit_min=body.word_limit_min,
+            word_limit_max=body.word_limit_max,
+            task_type=body.task_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    errors = [
+        WritingErrorItem(
+            type=e.get("type", ""),
+            original=e.get("original", ""),
+            correction=e.get("correction", ""),
+            explanation=e.get("explanation", ""),
+        )
+        for e in result.get("errors") or []
+        if isinstance(e, dict)
+    ]
+    return EvaluateWritingResponse(
+        word_count=word_count,
+        time_used_seconds=body.time_used_seconds,
+        evaluation=result.get("evaluation", ""),
+        corrected_text=result.get("corrected_text", ""),
+        errors=errors,
+        recommendations=result.get("recommendations", ""),
+    )
 
 
 @router.get("/synonyms", response_model=SynonymsResponse)

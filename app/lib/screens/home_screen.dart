@@ -2,11 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import '../api/api_client.dart';
 import '../models/deck.dart';
 import '../providers/auth_provider.dart';
-import '../api/api_client.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_overlay.dart';
 import 'deck_screen.dart';
 import 'study_screen.dart';
+import 'ielts_writing_screen.dart';
 
 String _errorMessage(dynamic e) {
   if (e is DioException && e.response?.data is Map) {
@@ -70,8 +73,12 @@ class _HomeScreenState extends State<HomeScreen> {
           title: const Text('Новая колода'),
           content: TextField(
             controller: c,
-            decoration: const InputDecoration(labelText: 'Название'),
+            decoration: const InputDecoration(
+              labelText: 'Название',
+              hintText: 'Мои слова',
+            ),
             autofocus: true,
+            onSubmitted: (_) => Navigator.pop(ctx, c.text.trim().isEmpty ? 'Колода' : c.text.trim()),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
@@ -95,20 +102,18 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: LoadingOverlay(message: 'Загрузка колод…'),
+      );
     }
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Колоды')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(onPressed: _load, child: const Text('Повторить')),
-            ],
-          ),
+        body: EmptyState(
+          icon: Icons.error_outline,
+          message: _error!,
+          actionLabel: 'Повторить',
+          onAction: _load,
         ),
       );
     }
@@ -123,14 +128,28 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _load,
-        child: ListView.builder(
+        child: ListView(
           padding: const EdgeInsets.all(8),
-          itemCount: decks.length,
-          itemBuilder: (context, i) {
-            final d = decks[i];
+          children: [
+            Card(
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                leading: CircleAvatar(
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  child: Icon(Icons.edit_note, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                ),
+                title: const Text('IELTS Письмо'),
+                subtitle: const Text('Таймер, подсчёт слов, проверка и оценка текста'),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () => context.push('/writing'),
+              ),
+            ),
+            ...List.generate(decks.length, (i) {
+              final d = decks[i];
             final due = _dueCounts?[d.id] ?? 0;
             return Card(
               child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 title: Text(d.name),
                 subtitle: Text('$due на сегодня'),
                 trailing: Row(
@@ -159,7 +178,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             );
-          },
+            }),
+          ],
         ),
       ),
     );

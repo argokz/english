@@ -100,9 +100,11 @@ async def create_card(
     deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    if await card_repo.exists_card_in_deck(db, deck_id, body.word):
+        raise HTTPException(status_code=409, detail="Слово уже есть в колоде")
     embedding = gemini_service.get_embedding(f"{body.word}: {body.translation}") if body.word else None
     card = await card_repo.create_card(
-        db, deck_id, body.word, body.translation, body.example, 
+        db, deck_id, body.word, body.translation, body.example,
         embedding=embedding,
         transcription=body.transcription,
         pronunciation_url=body.pronunciation_url,
@@ -122,6 +124,21 @@ async def get_due_cards(
         raise HTTPException(status_code=404, detail="Deck not found")
     cards = await card_repo.get_due_cards(db, deck_id, current_user.id)
     return cards
+
+
+@router.post("/{deck_id}/remove-duplicates")
+async def remove_duplicates(
+    deck_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Удалить дубликаты слов в колоде (оставить одну карточку на слово)."""
+    deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    removed = await card_repo.remove_duplicate_cards_in_deck(db, deck_id)
+    await db.commit()
+    return {"removed": removed}
 
 
 @router.post("/{deck_id}/synonym-groups")

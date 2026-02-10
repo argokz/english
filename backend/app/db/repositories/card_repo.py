@@ -1,10 +1,21 @@
 from datetime import datetime
 from uuid import UUID
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.card import Card
 from app.models.deck import Deck
+
+
+async def exists_card_in_deck(session: AsyncSession, deck_id: UUID, word: str) -> bool:
+    """Проверка без учёта регистра: есть ли уже такое слово в колоде."""
+    if not (word or "").strip():
+        return False
+    w = word.strip().lower()
+    result = await session.execute(
+        select(Card.id).where(Card.deck_id == deck_id, func.lower(Card.word) == w).limit(1)
+    )
+    return result.scalars().first() is not None
 
 
 async def get_cards_by_deck(session: AsyncSession, deck_id: UUID):
@@ -86,3 +97,21 @@ async def update_card(session: AsyncSession, card: Card, **kwargs) -> Card:
 
 async def delete_card(session: AsyncSession, card: Card) -> None:
     await session.delete(card)
+
+
+async def remove_duplicate_cards_in_deck(session: AsyncSession, deck_id: UUID) -> int:
+    """Удаляет дубликаты слов в колоде (без учёта регистра). Оставляет одну карточку на слово (самую старую). Возвращает количество удалённых."""
+    cards = await get_cards_by_deck(session, deck_id)
+    from collections import defaultdict
+    by_word: dict[str, list[Card]] = defaultdict(list)
+    for c in cards:
+        by_word[(c.word or "").strip().lower()].append(c)
+    removed = 0
+    for group in by_word.values():
+        if len(group) <= 1:
+            continue
+        group.sort(key=lambda c: c.created_at or datetime.min)
+        for c in group[1:]:
+            await delete_card(session, c)
+            removed += 1
+    return removed
