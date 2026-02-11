@@ -37,6 +37,10 @@ class _EnglishWordsAppState extends State<EnglishWordsApp> {
     widget.authProvider.ensureStorageLoaded().then((_) {
       if (mounted) setState(() => _authLoaded = true);
     });
+    // Если хранилище зависло — через 8 сек всё равно показываем экран (логин или колоды).
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted && !_authLoaded) setState(() => _authLoaded = true);
+    });
   }
 
   void _listenForDeepLink() {

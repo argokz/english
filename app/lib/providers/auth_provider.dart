@@ -37,10 +37,17 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> _loadStored() async {
-    _accessToken = await _storage.read(key: kStorageKeyAccessToken);
-    _userId = await _storage.read(key: kStorageKeyUserId);
-    _email = await _storage.read(key: kStorageKeyEmail);
-    _name = await _storage.read(key: kStorageKeyName);
+    try {
+      await (() async {
+        _accessToken = await _storage.read(key: kStorageKeyAccessToken);
+        _userId = await _storage.read(key: kStorageKeyUserId);
+        _email = await _storage.read(key: kStorageKeyEmail);
+        _name = await _storage.read(key: kStorageKeyName);
+      }()).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('AuthProvider _loadStored: $e');
+      _accessToken = _userId = _email = _name = null;
+    }
     notifyListeners();
   }
 
