@@ -76,6 +76,23 @@ async def get_cards_missing_transcription(
     return list(result.scalars().all())
 
 
+async def get_cards_missing_pos(
+    session: AsyncSession, user_id: UUID, deck_id: UUID | None = None, limit: int = 50
+) -> list[Card]:
+    """Cards that have no part_of_speech (для обновления переводов по частям речи)."""
+    q = (
+        select(Card)
+        .join(Deck, Deck.id == Card.deck_id)
+        .where(Deck.user_id == user_id, Card.part_of_speech.is_(None))
+        .order_by(Card.created_at.desc())
+        .limit(limit)
+    )
+    if deck_id is not None:
+        q = q.where(Card.deck_id == deck_id)
+    result = await session.execute(q)
+    return list(result.scalars().all())
+
+
 async def create_card(
     session: AsyncSession,
     deck_id: UUID,

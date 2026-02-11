@@ -45,27 +45,41 @@ async def generate_words(
     try:
         items = gemini_service.generate_word_list(level=body.level, topic=body.topic, count=body.count)
     except ValueError as e:
-        # Ошибка превышения квоты
         raise HTTPException(status_code=429, detail=str(e))
     created = 0
     skipped_duplicates = 0
     for item in items:
-        if await card_repo.exists_card_in_deck(db, deck_id, item["word"]):
-            skipped_duplicates += 1
-            continue
-        emb = gemini_service.get_embedding(f"{item['word']}: {item['translation']}")
-        pronunciation_url = gemini_service.get_pronunciation_url(item["word"])
-        await card_repo.create_card(
-            db,
-            deck_id,
-            item["word"],
-            item["translation"],
-            item.get("example"),
-            embedding=emb,
-            transcription=item.get("transcription"),
-            pronunciation_url=pronunciation_url,
-        )
-        created += 1
+        word = item["word"]
+        try:
+            data = gemini_service.enrich_word_with_pos(word)
+        except ValueError:
+            data = {"transcription": item.get("transcription"), "senses": []}
+        senses = data.get("senses") or []
+        if not senses:
+            senses = [{"part_of_speech": None, "translation": item.get("translation", ""), "example": item.get("example", "")}]
+        transcription = data.get("transcription") or item.get("transcription")
+        pronunciation_url = gemini_service.get_pronunciation_url(word)
+        for sense in senses:
+            pos = sense.get("part_of_speech")
+            if await card_repo.exists_card_in_deck_with_pos(db, deck_id, word, pos):
+                skipped_duplicates += 1
+                continue
+            trans = sense.get("translation", "")
+            if not trans:
+                continue
+            emb = gemini_service.get_embedding(f"{word}: {trans}")
+            await card_repo.create_card(
+                db,
+                deck_id,
+                word,
+                trans,
+                example=sense.get("example"),
+                embedding=emb,
+                transcription=transcription,
+                pronunciation_url=pronunciation_url,
+                part_of_speech=pos,
+            )
+            created += 1
     await db.commit()
     return {"created": created, "skipped_duplicates": skipped_duplicates}
 
@@ -95,16 +109,28 @@ async def enrich_word(
 ):
     if not body.word.strip():
         raise HTTPException(status_code=400, detail="word is required")
-    word = body.word.strip()
+    raw = body.word.strip()
+    source_lang = (body.source_lang or "en").strip().lower()
+    word_en = raw
+    if source_lang == "ru":
+        try:
+            word_en = gemini_service.translate(raw, "ru", "en")
+            if not word_en or not word_en.strip():
+                word_en = raw
+            else:
+                word_en = word_en.strip()
+        except Exception:
+            word_en = raw
     try:
-        result = gemini_service.enrich_word_with_pos(word)
+        result = gemini_service.enrich_word_with_pos(word_en)
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
-    pronunciation_url = gemini_service.get_pronunciation_url(word)
+    pronunciation_url = gemini_service.get_pronunciation_url(word_en)
     senses = result.get("senses") or []
     first_translation = senses[0]["translation"] if senses else ""
     first_example = senses[0]["example"] if senses else ""
     return EnrichWordResponse(
+        word=word_en,
         translation=first_translation,
         example=first_example,
         transcription=result.get("transcription") or None,
@@ -206,6 +232,7 @@ async def evaluate_writing(
         submission_id=str(sub.id),
         word_count=word_count,
         time_used_seconds=body.time_used_seconds,
+        band_score=result.get("band_score"),
         evaluation=result.get("evaluation", ""),
         corrected_text=result.get("corrected_text", ""),
         errors=errors,

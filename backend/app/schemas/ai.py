@@ -23,6 +23,7 @@ class TranslateResponse(BaseModel):
 
 class EnrichWordRequest(BaseModel):
     word: str
+    source_lang: str = "en"  # "en" | "ru" — язык введённого слова
 
 
 class EnrichWordSense(BaseModel):
@@ -32,11 +33,12 @@ class EnrichWordSense(BaseModel):
 
 
 class EnrichWordResponse(BaseModel):
-    translation: str = ""  # backward compat: first sense translation
-    example: str = ""  # backward compat: first sense example
+    word: str | None = None  # английское слово для карточки (если ввод был на русском — перевод)
+    translation: str = ""
+    example: str = ""
     transcription: str | None = None
     pronunciation_url: str | None = None
-    senses: list[EnrichWordSense] = []  # all POS variants
+    senses: list[EnrichWordSense] = []
 
 
 class SimilarWordItem(BaseModel):
@@ -53,6 +55,17 @@ class BackfillTranscriptionsRequest(BaseModel):
 
 class BackfillTranscriptionsResponse(BaseModel):
     updated: int
+
+
+class BackfillPosRequest(BaseModel):
+    limit: int = 30  # max cards to process per run
+
+
+class BackfillPosResponse(BaseModel):
+    updated: int  # cards updated with POS
+    created: int  # new cards for extra senses
+    skipped: int  # no senses / error
+    errors: int
 
 
 class SynonymsResponse(BaseModel):
@@ -93,6 +106,7 @@ class EvaluateWritingResponse(BaseModel):
     submission_id: str | None = None
     word_count: int
     time_used_seconds: int | None = None
+    band_score: float | None = None  # IELTS 0–9, шаг 0.5
     evaluation: str
     corrected_text: str
     errors: list[WritingErrorItem]

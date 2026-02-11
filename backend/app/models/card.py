@@ -33,6 +33,7 @@ class Card(Base):
     embedding: Mapped[list | None] = mapped_column(Vector(768), nullable=True)
     synonym_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     part_of_speech: Mapped[str | None] = mapped_column(String(32), nullable=True)  # noun, verb, adjective, adverb
+    examples: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # список примеров предложений [str, ...]
 
     deck = relationship("Deck", back_populates="cards")
     review_logs = relationship("ReviewLog", back_populates="card", cascade="all, delete-orphan")

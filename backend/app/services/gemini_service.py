@@ -151,16 +151,17 @@ def _generate_content_with_fallback(prompt: str) -> str:
 
 
 def generate_word_list(level: str | None = None, topic: str | None = None, count: int = 20) -> list[dict[str, str]]:
-    """Generate list of words with translation, example, and IPA transcription. Returns list of {word, translation, example, transcription}."""
+    """Generate list of words with translation, example, and IPA. Include variety: different parts of speech (noun, verb, adj, adv) and some synonym pairs."""
     if not level and not topic:
         level = "A1"
     prompt = f"""Generate {count} frequent English words for learners.
 {"Use CEFR level: " + level + "." if level else ""}
 {"Use topic/theme: " + topic + "." if topic else ""}
-For each word provide: 1) English word, 2) Russian translation, 3) one short example sentence in English, 4) IPA phonetic transcription (e.g. ˈæpl for apple).
-Output format: one line per word, pipe-separated: word | translation | example | transcription
+Include a mix: nouns, verbs, adjectives, adverbs, and where useful 1-2 pairs of synonyms (e.g. big/large).
+For each word: 1) English word, 2) Russian translation, 3) one short example in English, 4) IPA (e.g. ˈæpl).
+Output: one line per word, pipe-separated: word | translation | example | transcription
 Example: apple | яблоко | I eat an apple every day. | ˈæpl
-Do not add numbering or extra text. Only lines in format: word | translation | example | transcription"""
+Do not add numbering. Only lines: word | translation | example | transcription"""
 
     text = _generate_content_with_fallback(prompt)
     result = []
@@ -196,63 +197,71 @@ def enrich_word(word: str) -> dict[str, str]:
     return {"translation": "", "example": "", "transcription": ""}
 
 
-def enrich_word_with_pos(word: str) -> dict[str, Any]:
-    """Get all parts of speech for word: senses (part_of_speech, translation, example), transcription, pronunciation_url."""
-    prompt = f'''For the English word "{word}" provide:
-1) One IPA phonetic transcription in square brackets (e.g., [bʊk]) — same for all meanings.
-2) For EACH part of speech the word can have (noun, verb, adjective, adverb), provide:
-   - part_of_speech: one of "noun", "verb", "adjective", "adverb"
-   - translation: Russian translation (one word or short phrase)
-   - example: one short example sentence in English using this word in that sense
+# Кэш обогащения по слову (экономия токенов при повторных запросах)
+_enrich_cache: dict[str, tuple[dict[str, Any], float]] = {}
+_ENRICH_CACHE_TTL = 300  # секунд
+_ENRICH_CACHE_MAX = 200
 
-Reply in JSON only with this exact structure:
-{{"transcription": "[...]", "senses": [{{"part_of_speech": "noun", "translation": "...", "example": "..."}}, ...]}}
-Include only the parts of speech that apply to this word.'''
 
-    text = _generate_content_with_fallback(prompt)
-    # Match outer {...} that contains "senses"
+def _parse_enrich_response(text: str, word: str) -> dict[str, Any]:
+    """Парсинг JSON-ответа enrich: transcription + senses."""
     m = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\"senses\"[^{}]*(?:\[.*?\])[^{}]*\}", text, re.DOTALL)
     if not m:
         m = re.search(r"\{.*\"senses\".*\}", text, re.DOTALL)
     if not m:
         m = re.search(r"\{[^{}]*\"transcription\"[^{}]*\}", text)
-    if m:
-        try:
-            raw = m.group(0)
-            # Fix possible trailing commas before ] or }
-            raw = re.sub(r",\s*([}\]])", r"\1", raw)
-            result = json.loads(raw)
-            transcription = result.get("transcription") or ""
-            if isinstance(transcription, str):
-                transcription = transcription.strip("[]")
-            senses = result.get("senses") or []
-            if not isinstance(senses, list):
-                senses = []
-            normalized = []
-            for s in senses:
-                if not isinstance(s, dict):
-                    continue
-                pos = (s.get("part_of_speech") or "").strip().lower()
-                if pos not in ("noun", "verb", "adjective", "adverb"):
-                    continue
-                normalized.append({
-                    "part_of_speech": pos,
-                    "translation": (s.get("translation") or "").strip(),
-                    "example": (s.get("example") or "").strip(),
-                })
-            if not normalized:
-                # Fallback: single sense without POS
-                trans = (result.get("translation") or "").strip()
-                ex = (result.get("example") or "").strip()
-                if trans or ex:
-                    normalized = [{"part_of_speech": "noun", "translation": trans, "example": ex}]
-            return {
-                "transcription": transcription or None,
-                "senses": normalized,
-            }
-        except json.JSONDecodeError:
-            pass
-    return {"transcription": None, "senses": []}
+    if not m:
+        return {"transcription": None, "senses": []}
+    try:
+        raw = re.sub(r",\s*([}\]])", r"\1", m.group(0))
+        result = json.loads(raw)
+        transcription = (result.get("transcription") or "").strip().strip("[]") or None
+        senses = result.get("senses") or []
+        normalized = []
+        for s in senses:
+            if not isinstance(s, dict):
+                continue
+            pos = (s.get("part_of_speech") or "").strip().lower()
+            if pos not in ("noun", "verb", "adjective", "adverb"):
+                continue
+            normalized.append({
+                "part_of_speech": pos,
+                "translation": (s.get("translation") or "").strip(),
+                "example": (s.get("example") or "").strip(),
+            })
+        if not normalized:
+            trans = (result.get("translation") or "").strip()
+            ex = (result.get("example") or "").strip()
+            if trans or ex:
+                normalized = [{"part_of_speech": "noun", "translation": trans, "example": ex}]
+        return {"transcription": transcription, "senses": normalized}
+    except json.JSONDecodeError:
+        return {"transcription": None, "senses": []}
+
+
+def enrich_word_with_pos(word: str) -> dict[str, Any]:
+    """Все части речи для слова: senses (part_of_speech, translation, example), transcription. С кэшем."""
+    w = (word or "").strip()
+    if not w:
+        return {"transcription": None, "senses": []}
+    key = w.lower()
+    import time
+    now = time.time()
+    if key in _enrich_cache:
+        data, ts = _enrich_cache[key]
+        if now - ts < _ENRICH_CACHE_TTL:
+            return data
+        del _enrich_cache[key]
+    if len(_enrich_cache) >= _ENRICH_CACHE_MAX:
+        # Удалить самые старые
+        for k in sorted(_enrich_cache.keys(), key=lambda x: _enrich_cache[x][1])[: _ENRICH_CACHE_MAX // 2]:
+            del _enrich_cache[k]
+
+    prompt = f'''Word "{w}". JSON: {{"transcription": "[IPA]", "senses": [{{"part_of_speech": "noun|verb|adjective|adverb", "translation": "рус", "example": "short EN sentence"}}]}}. Only applicable POS.'''
+    text = _generate_content_with_fallback(prompt)
+    data = _parse_enrich_response(text, w)
+    _enrich_cache[key] = (data, now)
+    return data
 
 
 def translate(text: str, source_lang: str, target_lang: str) -> str:
@@ -269,6 +278,22 @@ Translation:"""
         return (result or "").strip()
     except Exception:
         return ""
+
+
+def get_examples_for_card(word: str, translation: str, part_of_speech: str | None) -> list[str]:
+    """Сгенерировать 3–5 примеров предложений для слова в данном значении (частое употребление)."""
+    if not (word or "").strip():
+        return []
+    pos = (part_of_speech or "").strip().lower() or "any"
+    prompt = f"""English word "{word.strip()}" (Russian: {translation.strip()}, part of speech: {pos}).
+Give 3 to 5 short example sentences in English where this word is used in this meaning. Common usage only.
+Output: one sentence per line, no numbering, no extra text."""
+    try:
+        text = _generate_content_with_fallback(prompt)
+        lines = [s.strip() for s in (text or "").split("\n") if s.strip() and not s.strip()[0].isdigit()]
+        return lines[:5]
+    except Exception:
+        return []
 
 
 def get_pronunciation_url(word: str) -> str | None:
@@ -333,6 +358,7 @@ TEXT:
 
 Respond in JSON only with this exact structure (use Russian for evaluation, errors explanations, and recommendations):
 {{
+  "band_score": 6.5,
   "evaluation": "Краткая общая оценка текста: соответствие заданию, связность, грамматика, лексика. 2-4 предложения.",
   "corrected_text": "Полный текст с исправленными грамматическими и орфографическими ошибками. Сохраняйте структуру и смысл автора.",
   "errors": [
@@ -340,7 +366,7 @@ Respond in JSON only with this exact structure (use Russian for evaluation, erro
   ],
   "recommendations": "3-5 конкретных рекомендаций по улучшению (на русском)."
 }}
-If there are no errors, return "errors": [].
+band_score: number from 0 to 9 in steps of 0.5 (IELTS Writing band). If there are no errors, return "errors": [].
 Output only valid JSON, no markdown or extra text."""
 
     try:
@@ -353,7 +379,16 @@ Output only valid JSON, no markdown or extra text."""
             raw = raw.rsplit("```", 1)[0]
         raw = raw.strip()
         data = json.loads(raw)
+        band = data.get("band_score")
+        if band is not None:
+            try:
+                band = float(band)
+                if band < 0 or band > 9:
+                    band = None
+            except (TypeError, ValueError):
+                band = None
         return {
+            "band_score": band,
             "evaluation": data.get("evaluation", ""),
             "corrected_text": data.get("corrected_text", ""),
             "errors": data.get("errors") if isinstance(data.get("errors"), list) else [],
@@ -362,6 +397,7 @@ Output only valid JSON, no markdown or extra text."""
     except (json.JSONDecodeError, ValueError) as e:
         logger.warning(f"evaluate_ielts_writing parse error: {e}")
         return {
+            "band_score": None,
             "evaluation": "Не удалось разобрать ответ. Попробуйте ещё раз.",
             "corrected_text": text,
             "errors": [],

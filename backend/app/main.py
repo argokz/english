@@ -80,7 +80,7 @@ async def startup_event():
     logger.info("📝 Available endpoints:")
     logger.info("   - GET  /health")
     logger.info("   - POST /auth/google/login")
-    logger.info("   - GET  /decks")
+    logger.info("   - GET  /decks, POST /decks/{id}/cards, POST /decks/{id}/backfill-pos, POST /decks/{id}/fetch-examples, ...")
     logger.info("   - GET  /cards")
     logger.info("   - POST /ai/generate-words")
 

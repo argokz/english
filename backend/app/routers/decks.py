@@ -7,7 +7,7 @@ from app.models.deck import Deck
 from app.models.card import Card
 from app.schemas.deck import DeckCreate, DeckUpdate, DeckResponse
 from app.schemas.card import CardCreate, CardUpdate, CardResponse, ReviewRequest
-from app.schemas.ai import ApplySynonymGroupsRequest
+from app.schemas.ai import ApplySynonymGroupsRequest, BackfillPosRequest, BackfillPosResponse
 from app.db.session import get_db
 from app.db.repositories import deck_repo, card_repo
 from app.services import gemini_service
@@ -114,6 +114,34 @@ async def create_card(
     return card
 
 
+@router.post("/{deck_id}/cards/{card_id}/fetch-examples", response_model=CardResponse)
+async def fetch_card_examples(
+    deck_id: UUID,
+    card_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Запросить примеры предложений для карточки (по переводу и частому употреблению), сохранить в БД."""
+    deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    card = await card_repo.get_card_by_id(db, card_id, current_user.id)
+    if not card or card.deck_id != deck_id:
+        raise HTTPException(status_code=404, detail="Card not found")
+    try:
+        examples = gemini_service.get_examples_for_card(
+            card.word or "",
+            card.translation or "",
+            card.part_of_speech,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    await card_repo.update_card(db, card, examples=examples if examples else None)
+    await db.commit()
+    await db.refresh(card)
+    return card
+
+
 @router.get("/{deck_id}/due", response_model=list[CardResponse])
 async def get_due_cards(
     deck_id: UUID,
@@ -125,6 +153,62 @@ async def get_due_cards(
         raise HTTPException(status_code=404, detail="Deck not found")
     cards = await card_repo.get_due_cards(db, deck_id, current_user.id)
     return cards
+
+
+@router.post("/{deck_id}/backfill-pos", response_model=BackfillPosResponse)
+async def backfill_pos(
+    deck_id: UUID,
+    body: BackfillPosRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Обновить карточки без part_of_speech: добавить переводы по частям речи (сущ., глагол, прил., нареч.)."""
+    deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    limit = (body or BackfillPosRequest()).limit
+    cards = await card_repo.get_cards_missing_pos(db, current_user.id, deck_id=deck_id, limit=limit)
+    updated = 0
+    created = 0
+    skipped = 0
+    errors = 0
+    for card in cards:
+        try:
+            data = gemini_service.enrich_word_with_pos(card.word or "")
+            senses = data.get("senses") or []
+            if not senses:
+                skipped += 1
+                continue
+            transcription = data.get("transcription")
+            pronunciation_url = gemini_service.get_pronunciation_url(card.word or "")
+            first = senses[0]
+            await card_repo.update_card(
+                db, card,
+                part_of_speech=first.get("part_of_speech"),
+                translation=first.get("translation", card.translation),
+                example=first.get("example") or card.example,
+                transcription=transcription or card.transcription,
+                pronunciation_url=pronunciation_url or card.pronunciation_url,
+            )
+            updated += 1
+            for sense in senses[1:]:
+                pos = sense.get("part_of_speech")
+                if not pos:
+                    continue
+                if await card_repo.exists_card_in_deck_with_pos(db, deck_id, card.word or "", pos):
+                    continue
+                await card_repo.create_card(
+                    db, deck_id, card.word or "", sense.get("translation", ""),
+                    example=sense.get("example"),
+                    transcription=transcription,
+                    pronunciation_url=pronunciation_url,
+                    part_of_speech=pos,
+                )
+                created += 1
+        except Exception:
+            errors += 1
+    await db.commit()
+    return BackfillPosResponse(updated=updated, created=created, skipped=skipped, errors=errors)
 
 
 @router.post("/{deck_id}/remove-duplicates")

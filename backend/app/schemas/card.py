@@ -18,6 +18,7 @@ class CardUpdate(BaseModel):
     example: str | None = None
     transcription: str | None = None
     pronunciation_url: str | None = None
+    examples: list[str] | None = None
 
 
 class CardResponse(BaseModel):
@@ -33,6 +34,7 @@ class CardResponse(BaseModel):
     due: datetime
     synonym_group_id: UUID | None = None
     part_of_speech: str | None = None
+    examples: list[str] | None = None
 
     class Config:
         from_attributes = True
