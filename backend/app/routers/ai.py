@@ -156,6 +156,12 @@ async def evaluate_writing(
         if isinstance(e, dict)
     ]
     errors_data = [e.model_dump() for e in errors]
+    # Преобразуем recommendations из списка в строку, если это список
+    recommendations = result.get("recommendations", "")
+    if isinstance(recommendations, list):
+        recommendations = "\n".join(str(r) for r in recommendations)
+    elif recommendations is None:
+        recommendations = ""
     sub = await writing_repo.create_writing_submission(
         db,
         current_user.id,
@@ -163,7 +169,7 @@ async def evaluate_writing(
         word_count=word_count,
         evaluation=result.get("evaluation", ""),
         corrected_text=result.get("corrected_text", ""),
-        recommendations=result.get("recommendations", ""),
+        recommendations=recommendations,
         time_used_seconds=body.time_used_seconds,
         time_limit_minutes=body.time_limit_minutes,
         word_limit_min=body.word_limit_min,
