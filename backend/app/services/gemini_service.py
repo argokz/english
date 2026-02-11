@@ -203,17 +203,29 @@ _ENRICH_CACHE_TTL = 300  # секунд
 _ENRICH_CACHE_MAX = 200
 
 
+def _extract_first_json_object(text: str) -> str | None:
+    """Извлечь первый полный JSON-объект {...} с учётом вложенных скобок."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 def _parse_enrich_response(text: str, word: str) -> dict[str, Any]:
-    """Парсинг JSON-ответа enrich: transcription + senses."""
-    m = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\"senses\"[^{}]*(?:\[.*?\])[^{}]*\}", text, re.DOTALL)
-    if not m:
-        m = re.search(r"\{.*\"senses\".*\}", text, re.DOTALL)
-    if not m:
-        m = re.search(r"\{[^{}]*\"transcription\"[^{}]*\}", text)
-    if not m:
+    """Парсинг JSON-ответа enrich: transcription + senses (поддержка вложенных examples)."""
+    raw = _extract_first_json_object(text)
+    if not raw or "senses" not in raw:
         return {"transcription": None, "senses": []}
     try:
-        raw = re.sub(r",\s*([}\]])", r"\1", m.group(0))
+        raw = re.sub(r",\s*([}\]])", r"\1", raw)
         result = json.loads(raw)
         transcription = (result.get("transcription") or "").strip().strip("[]") or None
         senses = result.get("senses") or []

@@ -195,38 +195,64 @@ class _AddWordScreenState extends State<AddWordScreen> {
                   : const Text('Подсказать'),
             ),
             if (hasResult) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               Card(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                elevation: 1,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  child: Row(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Введённое слово: ', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                      Expanded(child: Text(_wordController.text.trim(), style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600))),
-                      if (_enrichResult!.word != null && _enrichResult!.word != _wordController.text.trim())
-                        Text('→ ${_enrichResult!.word}', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontStyle: FontStyle.italic)),
+                      Text('Слово', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _wordController.text.trim(),
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if (_enrichResult!.word != null && (_enrichResult!.word!.trim().toLowerCase() != _wordController.text.trim().toLowerCase()))
+                            Text('→ ', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))
+                          else const SizedBox.shrink(),
+                          if (_enrichResult!.word != null && (_enrichResult!.word!.trim().toLowerCase() != _wordController.text.trim().toLowerCase()))
+                            Text(_enrichResult!.word!, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontStyle: FontStyle.italic)),
+                        ],
+                      ),
+                      if (transcription != null && transcription.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text('/$transcription/', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      ],
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Text('Переводы по частям речи (сущ./глагол/прил./нареч.) и примеры', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
+              Text('Переводы по частям речи и примеры', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 10),
               ...List.generate(_enrichResult!.senses.length, (i) {
                 final sense = _enrichResult!.senses[i];
                 final selected = _selectedSenseIndices.contains(i);
-                final posLabel = sense.partOfSpeech.isNotEmpty ? PosColors.labelFor(sense.partOfSpeech) : '';
+                final posLabel = sense.partOfSpeech.isNotEmpty ? PosColors.labelFor(sense.partOfSpeech) : 'Перевод';
                 final posColor = PosColors.colorFor(sense.partOfSpeech.isEmpty ? null : sense.partOfSpeech);
+                final translationLines = sense.translation.trim().isEmpty ? <String>[] : sense.translation.split(RegExp(r';\s*'));
+                final allExamples = sense.examples.isNotEmpty ? sense.examples : (sense.example.isNotEmpty ? [sense.example] : <String>[]);
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                    side: BorderSide(color: selected ? posColor : Theme.of(context).dividerColor, width: selected ? 2 : 1),
+                  ),
                   child: InkWell(
                     onTap: () => setState(() {
                       if (selected) _selectedSenseIndices.remove(i); else _selectedSenseIndices.add(i);
                     }),
                     borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.all(14),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -240,28 +266,31 @@ class _AddWordScreenState extends State<AddWordScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (posLabel.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Chip(
-                                      label: Text(posLabel, style: const TextStyle(fontSize: 12)),
-                                      backgroundColor: posColor.withValues(alpha: 0.2),
-                                      side: BorderSide(color: posColor, width: 1),
-                                      padding: EdgeInsets.zero,
-                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
+                                Chip(
+                                  label: Text(posLabel, style: const TextStyle(fontSize: 12)),
+                                  backgroundColor: posColor.withValues(alpha: 0.2),
+                                  side: BorderSide(color: posColor, width: 1),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                const SizedBox(height: 10),
+                                if (translationLines.isNotEmpty)
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: translationLines.map((line) => Text(line.trim(), style: Theme.of(context).textTheme.bodyLarge)).toList(),
                                   ),
-                                Text(sense.translation.replaceAll('; ', '\n'), style: Theme.of(context).textTheme.bodyLarge),
-                                if (sense.example.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(sense.example, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  ),
-                                if (sense.examples.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text('Примеры: ${sense.examples.length}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
-                                  ),
+                                if (translationLines.isEmpty && sense.translation.isNotEmpty)
+                                  Text(sense.translation, style: Theme.of(context).textTheme.bodyLarge),
+                                if (allExamples.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Text('Примеры:', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.primary)),
+                                  const SizedBox(height: 4),
+                                  ...allExamples.map((ex) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: Text(ex, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic), maxLines: 3, overflow: TextOverflow.ellipsis),
+                                  )),
+                                ],
                               ],
                             ),
                           ),
