@@ -9,7 +9,13 @@ class EnrichWordSense {
   final String partOfSpeech;
   final String translation;
   final String example;
-  EnrichWordSense({required this.partOfSpeech, required this.translation, required this.example});
+  final List<String> examples;
+  EnrichWordSense({
+    required this.partOfSpeech,
+    required this.translation,
+    required this.example,
+    this.examples = const [],
+  });
 }
 
 class EnrichWordResult {
@@ -155,6 +161,7 @@ class ApiClient {
     String? transcription,
     String? pronunciationUrl,
     String? partOfSpeech,
+    List<String>? examples,
   }) async {
     final data = <String, dynamic>{
       'word': word,
@@ -163,6 +170,7 @@ class ApiClient {
       if (transcription != null && transcription.isNotEmpty) 'transcription': transcription,
       if (pronunciationUrl != null && pronunciationUrl.isNotEmpty) 'pronunciation_url': pronunciationUrl,
       if (partOfSpeech != null && partOfSpeech.isNotEmpty) 'part_of_speech': partOfSpeech,
+      if (examples != null && examples.isNotEmpty) 'examples': examples,
     };
     final r = await _dio.post<Map<String, dynamic>>('decks/$deckId/cards', data: data);
     return app.CardModel.fromJson(r.data!);
@@ -196,7 +204,7 @@ class ApiClient {
   }
 
   // AI — длинные запросы к Gemini используют увеличенный таймаут
-  /// Возвращает количество добавленных и количество пропущенных дубликатов (уже в колоде).
+  /// Возвращает количество добавленных и количество пропущенных дубликатов (уже в колоде). Батч-обогащение по 20 слов — долгий запрос.
   Future<GenerateWordsResult> generateWords({required String deckId, String? level, String? topic, int count = 20}) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'ai/generate-words',
@@ -206,7 +214,7 @@ class ApiClient {
         if (topic != null) 'topic': topic,
         'count': count,
       },
-      options: Options(receiveTimeout: _kLongRequestTimeout),
+      options: Options(receiveTimeout: _kBackfillPosTimeout),
     );
     final d = r.data!;
     return GenerateWordsResult(
@@ -220,20 +228,16 @@ class ApiClient {
     return r.data!['removed'] as int? ?? 0;
   }
 
-  /// Обновить карточки без части речи: добавить переводы по частям речи (сущ., глагол, прил., нареч.).
-  Future<BackfillPosResult> backfillPos(String deckId, {int limit = 30}) async {
+  /// Запустить в фоне обновление всех карточек без части речи. Без лимита. Возвращает сообщение для пользователя (202).
+  Future<String> backfillPos(String deckId) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'decks/$deckId/backfill-pos',
-      data: {'limit': limit},
-      options: Options(receiveTimeout: _kBackfillPosTimeout),
+      options: Options(receiveTimeout: const Duration(seconds: 30)),
     );
-    final d = r.data!;
-    return BackfillPosResult(
-      updated: d['updated'] as int? ?? 0,
-      created: d['created'] as int? ?? 0,
-      skipped: d['skipped'] as int? ?? 0,
-      errors: d['errors'] as int? ?? 0,
-    );
+    if (r.statusCode == 202) {
+      return r.data?['message'] as String? ?? 'Обработка запущена в фоне. Обновите колоду через некоторое время.';
+    }
+    throw DioException(requestOptions: r.requestOptions, response: r);
   }
 
   /// Translate text between Russian and English. sourceLang/targetLang: 'ru' | 'en'.
@@ -274,6 +278,7 @@ class ApiClient {
           partOfSpeech: m['part_of_speech'] as String? ?? '',
           translation: m['translation'] as String? ?? '',
           example: m['example'] as String? ?? '',
+          examples: (m['examples'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
         ));
       }
     }
@@ -283,6 +288,7 @@ class ApiClient {
           partOfSpeech: '',
           translation: d['translation'] as String? ?? '',
           example: d['example'] as String? ?? '',
+          examples: [],
         ),
       ];
     }
@@ -303,17 +309,17 @@ class ApiClient {
     return (r.data ?? []).map((e) => SimilarWord.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  /// Backfill transcription and pronunciation for cards that don't have them.
-  Future<int> backfillTranscriptions({String? deckId, int limit = 50}) async {
+  /// Запустить в фоне обновление транскрипций у всех карточек без них. Без лимита. Возвращает сообщение (202).
+  Future<String> backfillTranscriptions({String? deckId}) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'ai/backfill-transcriptions',
-      data: {
-        if (deckId != null) 'deck_id': deckId,
-        'limit': limit,
-      },
-      options: Options(receiveTimeout: _kLongRequestTimeout),
+      data: {if (deckId != null) 'deck_id': deckId},
+      options: Options(receiveTimeout: const Duration(seconds: 30)),
     );
-    return r.data!['updated'] as int;
+    if (r.statusCode == 202) {
+      return r.data?['message'] as String? ?? 'Обработка запущена в фоне. Обновите колоду через некоторое время.';
+    }
+    throw DioException(requestOptions: r.requestOptions, response: r);
   }
 
   /// Synonyms via Gemini; returns synonyms list and cards already in deck.
@@ -337,11 +343,11 @@ class ApiClient {
     );
   }
 
-  /// Suggest synonym groups for deck (Gemini clusters). Долгий запрос — батч по 10 карточек.
-  Future<List<SynonymGroup>> suggestSynonymGroups(String deckId, {int limit = 30}) async {
+  /// Suggest synonym groups for deck (все карточки колоды, батчами по 10).
+  Future<List<SynonymGroup>> suggestSynonymGroups(String deckId) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'ai/synonym-groups/suggest',
-      queryParameters: {'deck_id': deckId, 'limit': limit},
+      queryParameters: {'deck_id': deckId},
       options: Options(receiveTimeout: _kBackfillPosTimeout),
     );
     final list = r.data!['groups'] as List? ?? [];

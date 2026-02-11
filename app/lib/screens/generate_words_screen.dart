@@ -102,10 +102,10 @@ class _GenerateWordsScreenState extends State<GenerateWordsScreen> {
                               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
                             ),
                             child: Slider(
-                              value: _count.toDouble(),
+                              value: _count.clamp(5, 100).toDouble(),
                               min: 5,
-                              max: 50,
-                              divisions: 9,
+                              max: 100,
+                              divisions: 19,
                               label: '$_count',
                               onChanged: (v) => setState(() => _count = v.round()),
                             ),

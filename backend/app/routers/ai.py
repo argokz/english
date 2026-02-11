@@ -1,11 +1,12 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.db.session import get_db
+from app.db.session import get_db, async_session_maker
 from app.db.repositories import deck_repo, card_repo, writing_repo
 from app.services import gemini_service
 from app.schemas.ai import (
@@ -48,38 +49,43 @@ async def generate_words(
         raise HTTPException(status_code=429, detail=str(e))
     created = 0
     skipped_duplicates = 0
-    for item in items:
-        word = item["word"]
+    batch_size = gemini_service.BATCH_GENERATE_ENRICH_SIZE
+    for offset in range(0, len(items), batch_size):
+        chunk = items[offset : offset + batch_size]
+        words = [it["word"] for it in chunk]
         try:
-            data = gemini_service.enrich_word_with_pos(word)
+            batch_data = gemini_service.enrich_words_with_pos_batch(words, max_batch_size=batch_size)
         except ValueError:
-            data = {"transcription": item.get("transcription"), "senses": []}
-        senses = data.get("senses") or []
-        if not senses:
-            senses = [{"part_of_speech": None, "translation": item.get("translation", ""), "example": item.get("example", "")}]
-        transcription = data.get("transcription") or item.get("transcription")
-        pronunciation_url = gemini_service.get_pronunciation_url(word)
-        for sense in senses:
-            pos = sense.get("part_of_speech")
-            if await card_repo.exists_card_in_deck_with_pos(db, deck_id, word, pos):
-                skipped_duplicates += 1
-                continue
-            trans = sense.get("translation", "")
-            if not trans:
-                continue
-            emb = gemini_service.get_embedding(f"{word}: {trans}")
-            await card_repo.create_card(
-                db,
-                deck_id,
-                word,
-                trans,
-                example=sense.get("example"),
-                embedding=emb,
-                transcription=transcription,
-                pronunciation_url=pronunciation_url,
-                part_of_speech=pos,
-            )
-            created += 1
+            batch_data = [{"transcription": it.get("transcription"), "senses": []} for it in chunk]
+        for item, data in zip(chunk, batch_data):
+            word = item["word"]
+            senses = data.get("senses") or []
+            if not senses:
+                senses = [{"part_of_speech": None, "translation": item.get("translation", ""), "example": item.get("example", ""), "examples": []}]
+            transcription = data.get("transcription") or item.get("transcription")
+            pronunciation_url = gemini_service.get_pronunciation_url(word)
+            for sense in senses:
+                pos = sense.get("part_of_speech")
+                if await card_repo.exists_card_in_deck_with_pos(db, deck_id, word, pos):
+                    skipped_duplicates += 1
+                    continue
+                trans = sense.get("translation", "")
+                if not trans:
+                    continue
+                emb = gemini_service.get_embedding(f"{word}: {trans}")
+                await card_repo.create_card(
+                    db,
+                    deck_id,
+                    word,
+                    trans,
+                    example=sense.get("example"),
+                    embedding=emb,
+                    transcription=transcription,
+                    pronunciation_url=pronunciation_url,
+                    part_of_speech=pos,
+                    examples=sense.get("examples"),
+                )
+                created += 1
     await db.commit()
     return {"created": created, "skipped_duplicates": skipped_duplicates}
 
@@ -135,43 +141,75 @@ async def enrich_word(
         example=first_example,
         transcription=result.get("transcription") or None,
         pronunciation_url=pronunciation_url,
-        senses=[EnrichWordSense(part_of_speech=s["part_of_speech"], translation=s["translation"], example=s["example"]) for s in senses],
+        senses=[
+        EnrichWordSense(
+            part_of_speech=s["part_of_speech"],
+            translation=s["translation"],
+            example=s.get("example") or "",
+            examples=s.get("examples") or [],
+        )
+        for s in senses
+    ],
     )
 
 
-@router.post("/backfill-transcriptions", response_model=BackfillTranscriptionsResponse)
+_BACKFILL_FETCH_CHUNK = 100
+
+
+async def _run_backfill_transcriptions_background(deck_id: UUID | None, user_id: UUID) -> None:
+    """Фоновая задача: обновить транскрипции у всех карточек без лимита, порциями."""
+    async with async_session_maker() as db:
+        try:
+            while True:
+                cards = await card_repo.get_cards_missing_transcription(
+                    db, user_id, deck_id=deck_id, limit=_BACKFILL_FETCH_CHUNK
+                )
+                if not cards:
+                    break
+                batch_size = gemini_service.BATCH_GENERATE_ENRICH_SIZE
+                for offset in range(0, len(cards), batch_size):
+                    chunk = cards[offset : offset + batch_size]
+                    words = [c.word or "" for c in chunk]
+                    try:
+                        batch_data = gemini_service.enrich_words_with_pos_batch(words, max_batch_size=batch_size)
+                    except Exception:
+                        continue
+                    for card, data in zip(chunk, batch_data):
+                        try:
+                            transcription = (data.get("transcription") or "").strip() or None
+                            pronunciation_url = gemini_service.get_pronunciation_url(card.word or "")
+                            await card_repo.update_card(
+                                db, card, transcription=transcription, pronunciation_url=pronunciation_url
+                            )
+                        except Exception:
+                            pass
+                await db.commit()
+        except Exception:
+            pass
+
+
+@router.post("/backfill-transcriptions")
 async def backfill_transcriptions(
     body: BackfillTranscriptionsRequest | None = None,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update cards that have no transcription or pronunciation_url using Gemini + Google TTS."""
+    """Запустить в фоне обновление транскрипций у всех карточек без них. Без лимита, порциями."""
     body = body or BackfillTranscriptionsRequest()
     deck_id = UUID(body.deck_id) if body.deck_id else None
     if body.deck_id and deck_id:
         deck = await deck_repo.get_deck_by_id(db, deck_id, current_user.id)
         if not deck:
             raise HTTPException(status_code=404, detail="Deck not found")
-    cards = await card_repo.get_cards_missing_transcription(
-        db, current_user.id, deck_id=deck_id, limit=body.limit
+    background_tasks.add_task(_run_backfill_transcriptions_background, deck_id, current_user.id)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "message": "Обработка запущена в фоне. Обновите колоду через некоторое время.",
+        },
     )
-    updated = 0
-    for card in cards:
-        try:
-            result = gemini_service.enrich_word(card.word)
-            transcription = result.get("transcription") or ""
-            pronunciation_url = gemini_service.get_pronunciation_url(card.word)
-            await card_repo.update_card(
-                db, card, transcription=transcription, pronunciation_url=pronunciation_url
-            )
-            updated += 1
-        except ValueError:
-            # Превышение квоты - прекращаем обработку
-            break
-        except Exception:
-            continue
-    await db.commit()
-    return BackfillTranscriptionsResponse(updated=updated)
 
 
 def _word_count(text: str) -> int:
@@ -419,16 +457,14 @@ def _build_synonym_groups(cards: list, synonym_map: dict[str, set[str]]) -> list
 @router.post("/synonym-groups/suggest", response_model=SuggestSynonymGroupsResponse)
 async def suggest_synonym_groups(
     deck_id: str,
-    limit: int = 30,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Suggest synonym groups for deck: for each card get Gemini synonyms, cluster, return groups (2+ cards)."""
+    """Suggest synonym groups for deck: все карточки колоды, батчами по 10."""
     deck = await deck_repo.get_deck_by_id(db, UUID(deck_id), current_user.id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
     cards = await card_repo.get_cards_by_deck(db, UUID(deck_id))
-    cards = cards[:limit]
     synonym_map: dict[str, set[str]] = {}
     batch_size = gemini_service.BATCH_SYNONYM_SIZE
     for offset in range(0, len(cards), batch_size):

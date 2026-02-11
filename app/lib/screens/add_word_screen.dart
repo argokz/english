@@ -103,6 +103,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
             transcription: r.transcription,
             pronunciationUrl: r.pronunciationUrl,
             partOfSpeech: sense.partOfSpeech.isEmpty ? null : sense.partOfSpeech,
+            examples: sense.examples.isNotEmpty ? sense.examples : null,
           );
           saved++;
         } on DioException catch (e) {
@@ -250,11 +251,16 @@ class _AddWordScreenState extends State<AddWordScreen> {
                                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     ),
                                   ),
-                                Text(sense.translation, style: Theme.of(context).textTheme.bodyLarge),
+                                Text(sense.translation.replaceAll('; ', '\n'), style: Theme.of(context).textTheme.bodyLarge),
                                 if (sense.example.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(sense.example, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                  ),
+                                if (sense.examples.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text('Примеры: ${sense.examples.length}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
                                   ),
                               ],
                             ),

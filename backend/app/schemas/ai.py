@@ -28,8 +28,9 @@ class EnrichWordRequest(BaseModel):
 
 class EnrichWordSense(BaseModel):
     part_of_speech: str  # noun, verb, adjective, adverb
-    translation: str
+    translation: str  # может быть несколько вариантов через "; "
     example: str
+    examples: list[str] = []  # примеры предложений для этого смысла
 
 
 class EnrichWordResponse(BaseModel):
@@ -50,7 +51,7 @@ class SimilarWordItem(BaseModel):
 
 class BackfillTranscriptionsRequest(BaseModel):
     deck_id: str | None = None  # if None, all user's decks
-    limit: int = 50
+    limit: int = 100
 
 
 class BackfillTranscriptionsResponse(BaseModel):
@@ -58,7 +59,7 @@ class BackfillTranscriptionsResponse(BaseModel):
 
 
 class BackfillPosRequest(BaseModel):
-    limit: int = 30  # max cards to process per run
+    limit: int = 500  # max cards to process per run (batched by 10); run again for more
 
 
 class BackfillPosResponse(BaseModel):

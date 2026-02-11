@@ -77,7 +77,7 @@ async def get_cards_missing_transcription(
 
 
 async def get_cards_missing_pos(
-    session: AsyncSession, user_id: UUID, deck_id: UUID | None = None, limit: int = 50
+    session: AsyncSession, user_id: UUID, deck_id: UUID | None = None, limit: int = 500
 ) -> list[Card]:
     """Cards that have no part_of_speech (для обновления переводов по частям речи)."""
     q = (
@@ -103,6 +103,7 @@ async def create_card(
     transcription: str | None = None,
     pronunciation_url: str | None = None,
     part_of_speech: str | None = None,
+    examples: list[str] | None = None,
 ) -> Card:
     card = Card(
         deck_id=deck_id,
@@ -112,6 +113,7 @@ async def create_card(
         transcription=transcription,
         pronunciation_url=pronunciation_url,
         part_of_speech=part_of_speech,
+        examples=examples,
     )
     if embedding is not None:
         card.embedding = embedding

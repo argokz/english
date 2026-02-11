@@ -140,16 +140,14 @@ class _DeckScreenState extends State<DeckScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => const LoadingOverlay(
-        message: 'Обновление транскрипций…',
-        subtitle: 'Может занять несколько минут',
+        message: 'Запуск обновления транскрипций…',
+        subtitle: 'Обработка идёт в фоне',
       ),
     );
     try {
-      final updated = await api.backfillTranscriptions(deckId: widget.deckId, limit: 100);
+      final message = await api.backfillTranscriptions(deckId: widget.deckId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Обновлено карточек: $updated')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
         _load();
       }
     } catch (e) {
@@ -172,22 +170,14 @@ class _DeckScreenState extends State<DeckScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => const LoadingOverlay(
-        message: 'Обновление переводов по частям речи…',
-        subtitle: 'Может занять несколько минут',
+        message: 'Запуск обновления…',
+        subtitle: 'Обработка идёт в фоне',
       ),
     );
     try {
-      final result = await api.backfillPos(widget.deckId, limit: 30);
+      final message = await api.backfillPos(widget.deckId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Обновлено: ${result.updated}, добавлено новых: ${result.created}'
-              '${result.skipped > 0 ? ", пропущено: ${result.skipped}" : ""}'
-              '${result.errors > 0 ? ", ошибок: ${result.errors}" : ""}',
-            ),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
         _load();
       }
     } catch (e) {
@@ -230,7 +220,7 @@ class _DeckScreenState extends State<DeckScreen> {
     );
     List<SynonymGroup>? suggested;
     try {
-      suggested = await api.suggestSynonymGroups(widget.deckId, limit: 30);
+      suggested = await api.suggestSynonymGroups(widget.deckId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

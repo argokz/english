@@ -10,6 +10,7 @@ class CardCreate(BaseModel):
     transcription: str | None = None
     pronunciation_url: str | None = None
     part_of_speech: str | None = None
+    examples: list[str] | None = None
 
 
 class CardUpdate(BaseModel):
