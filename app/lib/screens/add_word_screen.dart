@@ -21,6 +21,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
   bool _loading = false;
   bool _enriching = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _inputIsRussian = false; // false = English, true = Russian
 
   EnrichWordResult? _enrichResult;
   final Set<int> _selectedSenseIndices = {};
@@ -34,7 +35,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
   String? get _pronunciationUrl => _enrichResult?.pronunciationUrl;
 
   Future<void> _playWord() async {
-    final word = _wordController.text.trim();
+    final word = (_enrichResult?.word ?? _wordController.text).trim();
     if (word.isEmpty) return;
     try {
       if (_pronunciationUrl != null && _pronunciationUrl!.isNotEmpty) {
@@ -53,7 +54,10 @@ class _AddWordScreenState extends State<AddWordScreen> {
     if (word.isEmpty || _enriching) return;
     setState(() => _enriching = true);
     try {
-      final result = await context.read<AuthProvider>().api.enrichWord(word);
+      final result = await context.read<AuthProvider>().api.enrichWord(
+            word,
+            sourceLang: _inputIsRussian ? 'ru' : 'en',
+          );
       if (mounted) {
         setState(() {
           _enrichResult = result;
@@ -71,8 +75,8 @@ class _AddWordScreenState extends State<AddWordScreen> {
   }
 
   Future<void> _save() async {
-    final word = _wordController.text.trim();
-    if (word.isEmpty) {
+    final inputText = _wordController.text.trim();
+    if (inputText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Введите слово')));
       return;
     }
@@ -80,6 +84,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Нажмите «Подсказать» и выберите переводы для сохранения')));
       return;
     }
+    final wordForCard = _enrichResult!.word ?? inputText; // всегда английское слово на карточке
     setState(() => _loading = true);
     var saved = 0;
     var skipped = 0;
@@ -92,7 +97,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
         try {
           await api.createCard(
             widget.deckId,
-            word: word,
+            word: wordForCard,
             translation: sense.translation,
             example: sense.example.isEmpty ? null : sense.example,
             transcription: r.transcription,
@@ -138,15 +143,24 @@ class _AddWordScreenState extends State<AddWordScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('English')),
+                ButtonSegment(value: true, label: Text('Русский')),
+              ],
+              selected: {_inputIsRussian},
+              onSelectionChanged: (s) => setState(() => _inputIsRussian = s.first),
+            ),
+            const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: TextField(
                     controller: _wordController,
-                    decoration: const InputDecoration(
-                      labelText: 'Слово (англ.)',
-                      hintText: 'apple',
+                    decoration: InputDecoration(
+                      labelText: _inputIsRussian ? 'Слово (рус.)' : 'Слово (англ.)',
+                      hintText: _inputIsRussian ? 'книга' : 'apple',
                     ),
                     textCapitalization: TextCapitalization.none,
                   ),
@@ -180,9 +194,24 @@ class _AddWordScreenState extends State<AddWordScreen> {
                   : const Text('Подсказать'),
             ),
             if (hasResult) ...[
-              const SizedBox(height: 20),
-              Text('Переводы по частям речи', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
+              Card(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      Text('Введённое слово: ', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      Expanded(child: Text(_wordController.text.trim(), style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600))),
+                      if (_enrichResult!.word != null && _enrichResult!.word != _wordController.text.trim())
+                        Text('→ ${_enrichResult!.word}', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontStyle: FontStyle.italic)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text('Переводы по частям речи (сущ./глагол/прил./нареч.) и примеры', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 6),
               ...List.generate(_enrichResult!.senses.length, (i) {
                 final sense = _enrichResult!.senses[i];
                 final selected = _selectedSenseIndices.contains(i);
@@ -225,7 +254,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
                                 if (sense.example.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
-                                    child: Text(sense.example, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
+                                    child: Text(sense.example, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic), maxLines: 2, overflow: TextOverflow.ellipsis),
                                   ),
                               ],
                             ),
@@ -245,7 +274,7 @@ class _AddWordScreenState extends State<AddWordScreen> {
                 ),
                 child: _loading
                     ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Сохранить выбранные'),
+                    : Text(_selectedSenseIndices.length == 1 ? 'Добавить карточку' : 'Добавить карточки (${_selectedSenseIndices.length})'),
               ),
             ],
           ],

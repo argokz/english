@@ -31,13 +31,77 @@ class _DeckScreenState extends State<DeckScreen> {
   bool _groupBySynonyms = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   String _searchQuery = '';
+  bool _selectionMode = false;
+  final Set<String> _selectedWordKeys = {};
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     _audioPlayer.dispose();
     super.dispose();
+  }
+
+  void _removeCardsFromList(Set<String> cardIds) {
+    if (_cards == null || cardIds.isEmpty) return;
+    setState(() {
+      _cards = _cards!.where((c) => !cardIds.contains(c.id)).toList();
+    });
+  }
+
+  void _replaceCardInList(app.CardModel updated) {
+    if (_cards == null) return;
+    final idx = _cards!.indexWhere((c) => c.id == updated.id);
+    if (idx < 0) return;
+    setState(() {
+      _cards = [..._cards!.sublist(0, idx), updated, ..._cards!.sublist(idx + 1)];
+    });
+  }
+
+  Future<void> _showExamplesForCard(app.CardModel card) async {
+    List<String> examples = card.examples ?? [];
+    if (examples.isEmpty) {
+      try {
+        final updated = await context.read<AuthProvider>().api.fetchCardExamples(widget.deckId, card.id);
+        if (mounted) {
+          _replaceCardInList(updated);
+          examples = updated.examples ?? [];
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+        return;
+      }
+    }
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Примеры: ${card.word}', style: Theme.of(ctx).textTheme.titleMedium),
+            ),
+            if (examples.isEmpty)
+              const Padding(padding: EdgeInsets.all(16), child: Text('Нет примеров'))
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.5),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: examples.length,
+                  itemBuilder: (_, i) => ListTile(
+                    title: Text(examples[i], style: const TextStyle(fontSize: 14)),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   List<app.CardModel> _getFilteredCards() {
@@ -94,6 +158,44 @@ class _DeckScreenState extends State<DeckScreen> {
           SnackBar(
             content: Text('Ошибка: $e'),
             action: SnackBarAction(label: 'Повторить', onPressed: () => _runBackfillTranscriptions()),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _runBackfillPos() async {
+    final api = context.read<AuthProvider>().api;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const LoadingOverlay(
+        message: 'Обновление переводов по частям речи…',
+        subtitle: 'Может занять несколько минут',
+      ),
+    );
+    try {
+      final result = await api.backfillPos(widget.deckId, limit: 30);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Обновлено: ${result.updated}, добавлено новых: ${result.created}'
+              '${result.skipped > 0 ? ", пропущено: ${result.skipped}" : ""}'
+              '${result.errors > 0 ? ", ошибок: ${result.errors}" : ""}',
+            ),
+          ),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            action: SnackBarAction(label: 'Повторить', onPressed: () => _runBackfillPos()),
           ),
         );
       }
@@ -218,21 +320,42 @@ class _DeckScreenState extends State<DeckScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.deckName),
+        title: Text(_selectionMode ? 'Выбрано: ${_selectedWordKeys.length}' : widget.deckName),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.school),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => StudyScreen(deckId: widget.deckId, deckName: widget.deckName),
+          if (_selectionMode) ...[
+            TextButton(
+              onPressed: () => setState(() {
+                _selectionMode = false;
+                _selectedWordKeys.clear();
+              }),
+              child: const Text('Отмена'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _selectedWordKeys.isEmpty ? null : _deleteSelectedGroups,
+              tooltip: 'Удалить выбранные',
+            ),
+          ] else ...[
+            if (!_groupBySynonyms)
+              IconButton(
+                icon: const Icon(Icons.playlist_remove),
+                onPressed: () => setState(() => _selectionMode = true),
+                tooltip: 'Множественное удаление',
+              ),
+            IconButton(
+              icon: const Icon(Icons.school),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StudyScreen(deckId: widget.deckId, deckName: widget.deckName),
+                ),
               ),
             ),
-          ),
-          PopupMenuButton<String>(
+            PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (value) async {
               if (value == 'backfill') _runBackfillTranscriptions();
+              else if (value == 'backfill_pos') _runBackfillPos();
               else if (value == 'remove_duplicates') _runRemoveDuplicates();
               else if (value == 'synonym_groups') _showSuggestSynonymGroups();
               else if (value == 'bulk_add') {
@@ -247,11 +370,13 @@ class _DeckScreenState extends State<DeckScreen> {
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'bulk_add', child: Text('Добавить несколько слов')),
+              const PopupMenuItem(value: 'backfill_pos', child: Text('Обновить переводы по частям речи')),
               const PopupMenuItem(value: 'backfill', child: Text('Обновить транскрипции')),
               const PopupMenuItem(value: 'synonym_groups', child: Text('Найти группы синонимов')),
               const PopupMenuItem(value: 'remove_duplicates', child: Text('Удалить дубликаты слов')),
             ],
           ),
+          ],
         ],
       ),
       body: _loading
@@ -303,7 +428,11 @@ class _DeckScreenState extends State<DeckScreen> {
                               ChoiceChip(
                                 label: const Text('По группам'),
                                 selected: _groupBySynonyms,
-                                onSelected: (_) => setState(() => _groupBySynonyms = true),
+                                onSelected: (_) => setState(() {
+                                  _groupBySynonyms = true;
+                                  _selectionMode = false;
+                                  _selectedWordKeys.clear();
+                                }),
                               ),
                             ],
                           ),
@@ -372,17 +501,46 @@ class _DeckScreenState extends State<DeckScreen> {
   }
 
   Widget _buildCardTile(app.CardModel c) {
+    final posLabel = c.partOfSpeech != null && c.partOfSpeech!.isNotEmpty
+        ? PosColors.labelFor(c.partOfSpeech)
+        : null;
+    final posColor = posLabel != null ? PosColors.colorFor(c.partOfSpeech) : null;
     return Card(
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         title: Text(c.word),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (posLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Chip(
+                  label: Text(posLabel, style: const TextStyle(fontSize: 12)),
+                  backgroundColor: posColor!.withValues(alpha: 0.2),
+                  side: BorderSide(color: posColor),
+                  padding: EdgeInsets.zero,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
             Text(c.translation),
             if (c.transcription != null && c.transcription!.isNotEmpty)
               Text('/${c.transcription}/', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey[600])),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: InkWell(
+                onTap: () => _showExamplesForCard(c),
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    (c.examples != null && c.examples!.isNotEmpty) ? 'Примеры (${c.examples!.length})' : 'Запросить примеры',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
         trailing: Row(
@@ -398,7 +556,7 @@ class _DeckScreenState extends State<DeckScreen> {
               onPressed: () async {
                 try {
                   await context.read<AuthProvider>().api.deleteCard(c.id);
-                  _load();
+                  if (mounted) _removeCardsFromList({c.id});
                 } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
@@ -427,11 +585,42 @@ class _DeckScreenState extends State<DeckScreen> {
   }
 
   Future<void> _deleteWordGroup(List<app.CardModel> groupCards) async {
+    final ids = groupCards.map((c) => c.id).toSet();
     try {
       for (final c in groupCards) {
         await context.read<AuthProvider>().api.deleteCard(c.id);
       }
-      if (mounted) _load();
+      if (mounted) _removeCardsFromList(ids);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
+  }
+
+  Future<void> _deleteSelectedGroups() async {
+    if (_selectedWordKeys.isEmpty || _cards == null) return;
+    final byWord = _groupByWord(_getFilteredCards());
+    final toDelete = <app.CardModel>[];
+    for (final key in _selectedWordKeys) {
+      final group = byWord[key];
+      if (group != null) toDelete.addAll(group);
+    }
+    final ids = toDelete.map((c) => c.id).toSet();
+    try {
+      for (final c in toDelete) {
+        await context.read<AuthProvider>().api.deleteCard(c.id);
+      }
+      if (mounted) {
+        setState(() {
+          _selectedWordKeys.clear();
+          _selectionMode = false;
+        });
+        _removeCardsFromList(ids);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Удалено: ${toDelete.length}')),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
@@ -442,6 +631,7 @@ class _DeckScreenState extends State<DeckScreen> {
   Widget _buildWordGroupTile(String wordKey, List<app.CardModel> groupCards) {
     final first = groupCards.first;
     final word = first.word;
+    final isSelected = _selectedWordKeys.contains(wordKey);
     String? transcription;
     for (final c in groupCards) {
       if (c.transcription != null && c.transcription!.isNotEmpty) {
@@ -458,21 +648,29 @@ class _DeckScreenState extends State<DeckScreen> {
       }
     }
     cardForPlay ??= first;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    word,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
+    Widget content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              if (_selectionMode)
+                Checkbox(
+                  value: isSelected,
+                  onChanged: (_) => setState(() {
+                    if (isSelected) _selectedWordKeys.remove(wordKey);
+                    else _selectedWordKeys.add(wordKey);
+                  }),
                 ),
+              Expanded(
+                child: Text(
+                  word,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (!_selectionMode) ...[
                 IconButton(
                   icon: const Icon(Icons.volume_up, size: 22),
                   onPressed: () => _playWord(cardForPlay!),
@@ -484,36 +682,49 @@ class _DeckScreenState extends State<DeckScreen> {
                   tooltip: 'Удалить слово',
                 ),
               ],
-            ),
+            ],
+          ),
             if (transcription != null && transcription.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text('/$transcription/', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey[600])),
               ),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final c in groupCards) ...[
-                  Chip(
-                    avatar: c.partOfSpeech != null && c.partOfSpeech!.isNotEmpty
-                        ? CircleAvatar(backgroundColor: PosColors.colorFor(c.partOfSpeech), radius: 10)
-                        : null,
-                    label: Text(
-                      c.partOfSpeech != null && c.partOfSpeech!.isNotEmpty
-                          ? '${PosColors.labelFor(c.partOfSpeech)} ${c.translation}'
-                          : c.translation,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final c in groupCards) ...[
+                Chip(
+                  avatar: c.partOfSpeech != null && c.partOfSpeech!.isNotEmpty
+                      ? CircleAvatar(backgroundColor: PosColors.colorFor(c.partOfSpeech), radius: 10)
+                      : null,
+                  label: Text(
+                    c.partOfSpeech != null && c.partOfSpeech!.isNotEmpty
+                        ? '${PosColors.labelFor(c.partOfSpeech)} ${c.translation}'
+                        : c.translation,
+                    style: const TextStyle(fontSize: 13),
                   ),
-                ],
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ],
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
+    if (_selectionMode) {
+      return Card(
+        child: InkWell(
+          onTap: () => setState(() {
+            if (isSelected) _selectedWordKeys.remove(wordKey);
+            else _selectedWordKeys.add(wordKey);
+          }),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          child: content,
+        ),
+      );
+    }
+    return Card(child: content);
   }
 
   Widget _buildFlatList() {
@@ -527,6 +738,7 @@ class _DeckScreenState extends State<DeckScreen> {
     final byWord = _groupByWord(cards);
     final wordKeys = byWord.keys.toList()..sort((a, b) => a.compareTo(b));
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.all(8),
       itemCount: wordKeys.length,
       itemBuilder: (context, i) => _buildWordGroupTile(wordKeys[i], byWord[wordKeys[i]]!),
@@ -552,6 +764,7 @@ class _DeckScreenState extends State<DeckScreen> {
         return a.compareTo(b);
       });
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.all(8),
       itemCount: groupOrder.length,
       itemBuilder: (context, gi) {

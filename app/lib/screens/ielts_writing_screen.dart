@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../core/app_theme.dart';
@@ -229,6 +230,12 @@ class _IeltsWritingScreenState extends State<IeltsWritingScreen> {
     );
   }
 
+  void _copyToClipboard(String text, String label) {
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label скопировано')));
+  }
+
   Widget _buildResult() {
     final r = _result!;
     return Column(
@@ -236,9 +243,33 @@ class _IeltsWritingScreenState extends State<IeltsWritingScreen> {
       children: [
         Text('Результат: ${r.wordCount} слов${r.timeUsedSeconds != null ? ", время: ${r.timeUsedSeconds! ~/ 60}:${(r.timeUsedSeconds! % 60).toString().padLeft(2, '0')}" : ""}',
             style: Theme.of(context).textTheme.titleSmall),
+        if (r.bandScore != null) ...[
+          const SizedBox(height: 12),
+          Card(
+            color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              child: Row(
+                children: [
+                  Text('Балл IELTS: ', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    r.bandScore! == r.bandScore!.roundToDouble()
+                        ? '${r.bandScore!.toInt()}'
+                        : r.bandScore!.toStringAsFixed(1),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
+        _Section(title: 'Исходный текст', onCopy: () => _copyToClipboard(_textController.text, 'Исходный текст'), child: Text(_textController.text)),
         _Section(title: 'Оценка', child: Text(r.evaluation)),
-        if (r.correctedText.isNotEmpty) _Section(title: 'Исправленный текст', child: Text(r.correctedText)),
+        if (r.correctedText.isNotEmpty) _Section(title: 'Исправленный текст', onCopy: () => _copyToClipboard(r.correctedText, 'Исправленный текст'), child: Text(r.correctedText)),
         if (r.errors.isNotEmpty) _Section(
           title: 'Ошибки (${r.errors.length})',
           child: Column(
@@ -277,17 +308,34 @@ class _IeltsWritingScreenState extends State<IeltsWritingScreen> {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+  const _Section({required this.title, required this.child, this.onCopy});
 
   final String title;
   final Widget child;
+  final VoidCallback? onCopy;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        Row(
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            if (onCopy != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.copy, size: 20),
+                onPressed: onCopy,
+                tooltip: 'Копировать',
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(36, 36),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ],
+        ),
         const SizedBox(height: 8),
         Card(
           child: Padding(

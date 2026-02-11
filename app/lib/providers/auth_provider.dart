@@ -6,7 +6,7 @@ import '../api/api_client.dart';
 
 class AuthProvider with ChangeNotifier {
   AuthProvider() : _storage = const FlutterSecureStorage() {
-    _loadStored();
+    _loadFuture = _loadStored();
   }
 
   final FlutterSecureStorage _storage;
@@ -17,6 +17,7 @@ class AuthProvider with ChangeNotifier {
   String? _userId;
   String? _email;
   String? _name;
+  Future<void>? _loadFuture;
 
   String? get accessToken => _accessToken;
   String? get userId => _userId;
@@ -24,8 +25,15 @@ class AuthProvider with ChangeNotifier {
   String? get name => _name;
   bool get isLoggedIn => _accessToken != null && _accessToken!.isNotEmpty;
 
+  /// Дождаться загрузки токена из хранилища (чтобы не редиректить на логин до чтения).
+  Future<void> ensureStorageLoaded() async {
+    await _loadFuture;
+  }
+
   Future<String?> getToken() async {
-    return _accessToken ?? await _storage.read(key: kStorageKeyAccessToken);
+    if (_accessToken != null) return _accessToken;
+    await _loadFuture;
+    return _accessToken;
   }
 
   Future<void> _loadStored() async {

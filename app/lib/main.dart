@@ -28,10 +28,15 @@ class EnglishWordsApp extends StatefulWidget {
 }
 
 class _EnglishWordsAppState extends State<EnglishWordsApp> {
+  bool _authLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _listenForDeepLink();
+    widget.authProvider.ensureStorageLoaded().then((_) {
+      if (mounted) setState(() => _authLoaded = true);
+    });
   }
 
   void _listenForDeepLink() {
@@ -55,6 +60,15 @@ class _EnglishWordsAppState extends State<EnglishWordsApp> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_authLoaded) {
+      return MaterialApp(
+        title: 'English Words',
+        theme: AppTheme.theme,
+        home: const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
     final router = GoRouter(
       initialLocation: '/',
       refreshListenable: widget.authProvider,

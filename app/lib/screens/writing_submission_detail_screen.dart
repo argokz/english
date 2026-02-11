@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../core/app_theme.dart';
@@ -63,6 +64,12 @@ class _WritingSubmissionDetailScreenState extends State<WritingSubmissionDetailS
     );
   }
 
+  void _copyToClipboard(String text, String label) {
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label скопировано')));
+  }
+
   Widget _buildContent(WritingSubmissionDetail r) {
     final timeStr = r.timeUsedSeconds != null
         ? '${r.timeUsedSeconds! ~/ 60}:${(r.timeUsedSeconds! % 60).toString().padLeft(2, '0')}'
@@ -75,9 +82,9 @@ class _WritingSubmissionDetailScreenState extends State<WritingSubmissionDetailS
           style: Theme.of(context).textTheme.titleSmall,
         ),
         const SizedBox(height: 16),
-        _Section(title: 'Исходный текст', child: Text(r.originalText)),
+        _Section(title: 'Исходный текст', child: Text(r.originalText), onCopy: () => _copyToClipboard(r.originalText, 'Исходный текст')),
         _Section(title: 'Оценка', child: Text(r.evaluation)),
-        _Section(title: 'Исправленный текст', child: Text(r.correctedText)),
+        _Section(title: 'Исправленный текст', child: Text(r.correctedText), onCopy: () => _copyToClipboard(r.correctedText, 'Исправленный текст')),
         if (r.errors.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -115,10 +122,11 @@ class _WritingSubmissionDetailScreenState extends State<WritingSubmissionDetailS
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+  const _Section({required this.title, required this.child, this.onCopy});
 
   final String title;
   final Widget child;
+  final VoidCallback? onCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +135,20 @@ class _Section extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          child: Row(
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              if (onCopy != null) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 20),
+                  onPressed: onCopy,
+                  tooltip: 'Копировать',
+                  style: IconButton.styleFrom(minimumSize: const Size(36, 36), padding: EdgeInsets.zero),
+                ),
+              ],
+            ],
+          ),
         ),
         Card(
           child: Padding(

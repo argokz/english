@@ -11,6 +11,7 @@ class CardModel {
   final DateTime due;
   final String? synonymGroupId;
   final String? partOfSpeech;
+  final List<String>? examples;
 
   CardModel({
     required this.id,
@@ -25,6 +26,7 @@ class CardModel {
     required this.due,
     this.synonymGroupId,
     this.partOfSpeech,
+    this.examples,
   });
 
   factory CardModel.fromJson(Map<String, dynamic> json) {
@@ -41,6 +43,7 @@ class CardModel {
       due: DateTime.parse(json['due'] as String),
       synonymGroupId: json['synonym_group_id'] as String?,
       partOfSpeech: json['part_of_speech'] as String?,
+      examples: (json['examples'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
     );
   }
 }

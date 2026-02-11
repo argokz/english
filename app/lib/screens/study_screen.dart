@@ -90,6 +90,59 @@ class _StudyScreenState extends State<StudyScreen> {
     }
   }
 
+  void _replaceCardInQueue(app.CardModel updated) {
+    if (_queue == null) return;
+    final idx = _queue!.indexWhere((c) => c.id == updated.id);
+    if (idx < 0) return;
+    setState(() {
+      _queue = [..._queue!.sublist(0, idx), updated, ..._queue!.sublist(idx + 1)];
+    });
+  }
+
+  Future<void> _showExamplesForCard(app.CardModel card) async {
+    List<String> examples = card.examples ?? [];
+    if (examples.isEmpty) {
+      try {
+        final updated = await context.read<AuthProvider>().api.fetchCardExamples(widget.deckId, card.id);
+        if (mounted) {
+          _replaceCardInQueue(updated);
+          examples = updated.examples ?? [];
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+        return;
+      }
+    }
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Примеры: ${card.word}', style: Theme.of(ctx).textTheme.titleMedium),
+            ),
+            if (examples.isEmpty)
+              const Padding(padding: EdgeInsets.all(16), child: Text('Нет примеров'))
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.5),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: examples.length,
+                  itemBuilder: (_, i) => ListTile(
+                    title: Text(examples[i], style: const TextStyle(fontSize: 14)),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _checkAnswer() async {
     if (_queue == null || _index >= _queue!.length) return;
     
@@ -361,6 +414,22 @@ class _StudyScreenState extends State<StudyScreen> {
                             textAlign: TextAlign.center,
                           ),
                         ],
+                        const SizedBox(height: 8),
+                        InkWell(
+                          onTap: () => _showExamplesForCard(card),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text(
+                              (card.examples != null && card.examples!.isNotEmpty)
+                                  ? 'Примеры (${card.examples!.length})'
+                                  : 'Запросить примеры',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

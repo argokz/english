@@ -13,12 +13,14 @@ class EnrichWordSense {
 }
 
 class EnrichWordResult {
+  final String? word; // английское слово для карточки (из API при вводе на русском)
   final String translation;
   final String example;
   final String? transcription;
   final String? pronunciationUrl;
   final List<EnrichWordSense> senses;
   EnrichWordResult({
+    this.word,
     required this.translation,
     required this.example,
     this.transcription,
@@ -32,6 +34,14 @@ class TranslateResult {
   final String sourceLang;
   final String targetLang;
   TranslateResult({required this.translation, required this.sourceLang, required this.targetLang});
+}
+
+class BackfillPosResult {
+  final int updated;
+  final int created;
+  final int skipped;
+  final int errors;
+  BackfillPosResult({required this.updated, required this.created, required this.skipped, required this.errors});
 }
 
 /// Таймаут для запросов к Gemini (генерация слов, бэкфилл, синонимы): ждём ответа долго, прерываем только при реальной ошибке.
@@ -165,6 +175,15 @@ class ApiClient {
     return app.CardModel.fromJson(r.data!);
   }
 
+  /// Запросить примеры предложений для карточки, сохранить в БД. Возвращает обновлённую карточку.
+  Future<app.CardModel> fetchCardExamples(String deckId, String cardId) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'decks/$deckId/cards/$cardId/fetch-examples',
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
+    return app.CardModel.fromJson(r.data!);
+  }
+
   Future<void> deleteCard(String cardId) async {
     await _dio.delete('cards/$cardId');
   }
@@ -199,6 +218,22 @@ class ApiClient {
     return r.data!['removed'] as int? ?? 0;
   }
 
+  /// Обновить карточки без части речи: добавить переводы по частям речи (сущ., глагол, прил., нареч.).
+  Future<BackfillPosResult> backfillPos(String deckId, {int limit = 30}) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'decks/$deckId/backfill-pos',
+      data: {'limit': limit},
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
+    final d = r.data!;
+    return BackfillPosResult(
+      updated: d['updated'] as int? ?? 0,
+      created: d['created'] as int? ?? 0,
+      skipped: d['skipped'] as int? ?? 0,
+      errors: d['errors'] as int? ?? 0,
+    );
+  }
+
   /// Translate text between Russian and English. sourceLang/targetLang: 'ru' | 'en'.
   Future<TranslateResult> translate(String text, {required String sourceLang, required String targetLang}) async {
     final r = await _dio.post<Map<String, dynamic>>(
@@ -219,10 +254,11 @@ class ApiClient {
   }
 
   /// Enrich word: all senses by part of speech + common transcription and pronunciation.
-  Future<EnrichWordResult> enrichWord(String word) async {
+  /// sourceLang: 'en' or 'ru' — язык введённого слова. Возвращает word (англ. слово для карточки).
+  Future<EnrichWordResult> enrichWord(String word, {String sourceLang = 'en'}) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'ai/enrich-word',
-      data: {'word': word},
+      data: {'word': word, 'source_lang': sourceLang},
       options: Options(receiveTimeout: _kLongRequestTimeout),
     );
     final d = r.data!;
@@ -249,6 +285,7 @@ class ApiClient {
       ];
     }
     return EnrichWordResult(
+      word: d['word'] as String?,
       translation: d['translation'] as String? ?? (senses.isNotEmpty ? senses.first.translation : ''),
       example: d['example'] as String? ?? (senses.isNotEmpty ? senses.first.example : ''),
       transcription: d['transcription'] as String?,
@@ -400,6 +437,7 @@ class EvaluateWritingResult {
   final String? submissionId;
   final int wordCount;
   final int? timeUsedSeconds;
+  final double? bandScore; // IELTS 0–9, step 0.5
   final String evaluation;
   final String correctedText;
   final List<WritingErrorItem> errors;
@@ -408,6 +446,7 @@ class EvaluateWritingResult {
     this.submissionId,
     required this.wordCount,
     this.timeUsedSeconds,
+    this.bandScore,
     required this.evaluation,
     required this.correctedText,
     required this.errors,
@@ -415,10 +454,12 @@ class EvaluateWritingResult {
   });
   factory EvaluateWritingResult.fromJson(Map<String, dynamic> json) {
     final errorsList = json['errors'] as List? ?? [];
+    final band = json['band_score'];
     return EvaluateWritingResult(
       submissionId: json['submission_id'] as String?,
       wordCount: json['word_count'] as int? ?? 0,
       timeUsedSeconds: json['time_used_seconds'] as int?,
+      bandScore: band != null ? (band is num ? band.toDouble() : double.tryParse(band.toString())) : null,
       evaluation: json['evaluation'] as String? ?? '',
       correctedText: json['corrected_text'] as String? ?? '',
       errors: errorsList.map((e) => WritingErrorItem.fromJson(e as Map<String, dynamic>)).toList(),

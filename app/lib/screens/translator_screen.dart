@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../core/app_theme.dart';
+import '../core/pos_colors.dart';
 import '../models/deck.dart';
 import '../providers/auth_provider.dart';
 
@@ -19,6 +20,9 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
   bool _loading = false;
   TranslateResult? _result;
   String? _error;
+  EnrichWordResult? _enrichResult;
+  final Set<int> _selectedSenseIndices = {};
+  bool _loadingEnrich = false;
 
   @override
   void dispose() {
@@ -71,6 +75,37 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
           ? _sourceController.text.trim()
           : _result!.translation.trim();
 
+  bool get _isSingleEnglishWord {
+    final en = _englishWord;
+    if (en == null || en.isEmpty) return false;
+    return en.split(RegExp(r'\s+')).length == 1;
+  }
+
+  Future<void> _loadSenses() async {
+    final english = _englishWord;
+    if (english == null || english.isEmpty || !_isSingleEnglishWord || _loadingEnrich) return;
+    setState(() {
+      _loadingEnrich = true;
+      _enrichResult = null;
+      _selectedSenseIndices.clear();
+    });
+    try {
+      final result = await context.read<AuthProvider>().api.enrichWord(english);
+      if (mounted) {
+        setState(() {
+          _enrichResult = result;
+          for (var i = 0; i < result.senses.length; i++) _selectedSenseIndices.add(i);
+          _loadingEnrich = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingEnrich = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
+  }
+
   Future<void> _addToDeck() async {
     final english = _englishWord;
     final russian = _russianTranslation;
@@ -111,30 +146,54 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
     if (deck == null) return;
     setState(() => _loading = true);
     try {
-      String? transcription;
-      String? pronunciationUrl;
-      String? example;
-      final singleWord = english.split(RegExp(r'\s+')).length == 1;
-      if (singleWord) {
-        try {
-          final enrich = await api.enrichWord(english);
-          if (enrich.senses.isNotEmpty) {
-            transcription = enrich.transcription;
-            pronunciationUrl = enrich.pronunciationUrl;
-            example = enrich.senses.first.example.isEmpty ? null : enrich.senses.first.example;
+      final hasSenses = _enrichResult != null && _selectedSenseIndices.isNotEmpty;
+      if (hasSenses) {
+        var saved = 0, skipped = 0;
+        final r = _enrichResult!;
+        for (final i in _selectedSenseIndices) {
+          if (i < 0 || i >= r.senses.length) continue;
+          final sense = r.senses[i];
+          try {
+            await api.createCard(
+              deck.id,
+              word: english,
+              translation: sense.translation,
+              example: sense.example.isEmpty ? null : sense.example,
+              transcription: r.transcription,
+              pronunciationUrl: r.pronunciationUrl,
+              partOfSpeech: sense.partOfSpeech.isEmpty ? null : sense.partOfSpeech,
+            );
+            saved++;
+          } on DioException catch (e) {
+            if (e.response?.statusCode == 409) skipped++;
+            else rethrow;
           }
-        } catch (_) {}
-      }
-      await api.createCard(
-        deck.id,
-        word: english,
-        translation: russian,
-        example: example,
-        transcription: transcription,
-        pronunciationUrl: pronunciationUrl,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Добавлено в колоду «${deck.name}»')));
+        }
+        if (mounted) {
+          String msg = 'Добавлено: $saved';
+          if (skipped > 0) msg += ', пропущено: $skipped';
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+        }
+      } else {
+        String? transcription;
+        String? pronunciationUrl;
+        String? example;
+        if (_enrichResult != null && _enrichResult!.senses.isNotEmpty) {
+          transcription = _enrichResult!.transcription;
+          pronunciationUrl = _enrichResult!.pronunciationUrl;
+          example = _enrichResult!.senses.first.example.isEmpty ? null : _enrichResult!.senses.first.example;
+        }
+        await api.createCard(
+          deck.id,
+          word: english,
+          translation: russian,
+          example: example,
+          transcription: transcription,
+          pronunciationUrl: pronunciationUrl,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Добавлено в колоду «${deck.name}»')));
+        }
       }
     } on DioException catch (e) {
       if (mounted) {
@@ -204,11 +263,74 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
                   ),
                 ),
               ),
+              if (_isSingleEnglishWord) ...[
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: _loadingEnrich ? null : _loadSenses,
+                  child: _loadingEnrich
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Получить все части речи'),
+                ),
+              ],
+              if (_enrichResult != null && _enrichResult!.senses.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('Переводы по частям речи', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 6),
+                ...List.generate(_enrichResult!.senses.length, (i) {
+                  final sense = _enrichResult!.senses[i];
+                  final selected = _selectedSenseIndices.contains(i);
+                  final posLabel = sense.partOfSpeech.isNotEmpty ? PosColors.labelFor(sense.partOfSpeech) : '';
+                  final posColor = PosColors.colorFor(sense.partOfSpeech.isEmpty ? null : sense.partOfSpeech);
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    child: InkWell(
+                      onTap: () => setState(() {
+                        if (selected) _selectedSenseIndices.remove(i);
+                        else _selectedSenseIndices.add(i);
+                      }),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: selected,
+                              onChanged: (v) => setState(() {
+                                if (v == true) _selectedSenseIndices.add(i);
+                                else _selectedSenseIndices.remove(i);
+                              }),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (posLabel.isNotEmpty)
+                                    Chip(
+                                      label: Text(posLabel, style: const TextStyle(fontSize: 12)),
+                                      backgroundColor: posColor.withValues(alpha: 0.2),
+                                      side: BorderSide(color: posColor),
+                                      padding: EdgeInsets.zero,
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  Text(sense.translation),
+                                  if (sense.example.isNotEmpty)
+                                    Text(sense.example, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _loading ? null : _addToDeck,
                 icon: const Icon(Icons.add_card),
-                label: const Text('Добавить в колоду'),
+                label: Text(_enrichResult != null && _selectedSenseIndices.isNotEmpty
+                    ? 'Добавить выбранные в колоду'
+                    : 'Добавить в колоду'),
               ),
             ],
           ],
