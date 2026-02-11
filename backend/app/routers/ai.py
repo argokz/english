@@ -430,12 +430,18 @@ async def suggest_synonym_groups(
     cards = await card_repo.get_cards_by_deck(db, UUID(deck_id))
     cards = cards[:limit]
     synonym_map: dict[str, set[str]] = {}
-    for c in cards:
+    batch_size = gemini_service.BATCH_SYNONYM_SIZE
+    for offset in range(0, len(cards), batch_size):
+        chunk = cards[offset : offset + batch_size]
+        words = [c.word or "" for c in chunk]
         try:
-            syns = gemini_service.get_synonyms(c.word or "", limit=12)
-            synonym_map[str(c.id)] = {s.lower() for s in syns}
+            batch_syns = gemini_service.get_synonyms_batch(words, limit=12)
         except Exception:
-            synonym_map[str(c.id)] = set()
+            for c in chunk:
+                synonym_map[str(c.id)] = set()
+            continue
+        for c, syns in zip(chunk, batch_syns):
+            synonym_map[str(c.id)] = {s.lower() for s in syns}
     raw_groups = _build_synonym_groups(cards, synonym_map)
     return SuggestSynonymGroupsResponse(
         groups=[

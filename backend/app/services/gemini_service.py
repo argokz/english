@@ -429,6 +429,45 @@ Output only the words, one per line, nothing else. Use lowercase. Do not repeat 
         return []
 
 
+BATCH_SYNONYM_SIZE = 10
+
+
+def get_synonyms_batch(words: list[str], limit: int = 12) -> list[list[str]]:
+    """Для каждого слова из списка (до 10) вернуть список синонимов одним запросом. Порядок как у words."""
+    words = [(w or "").strip() for w in words if (w or "").strip()][:BATCH_SYNONYM_SIZE]
+    if not words:
+        return []
+    word_list = ", ".join(f'"{w}"' for w in words)
+    prompt = f"""For each of these English words list up to {limit} synonyms or near-synonyms (lowercase, comma-separated). Do not repeat the word itself.
+Output exactly one line per word in the same order. Format: word: syn1, syn2, syn3
+Words: {word_list}"""
+    try:
+        text = _generate_content_with_fallback(prompt)
+        lines = [s.strip() for s in (text or "").split("\n") if s.strip()]
+        result: list[list[str]] = []
+        for i, w in enumerate(words):
+            syns: list[str] = []
+            w_lower = w.lower()
+            if i < len(lines):
+                line = lines[i]
+                rest = line
+                for sep in (":", " - ", "-"):
+                    if sep in line:
+                        idx = line.find(sep)
+                        rest = line[idx + len(sep) :].strip()
+                        break
+                for part in rest.replace(";", ",").split(","):
+                    s = part.strip().lower().strip(".")
+                    if s and s != w_lower and s not in syns:
+                        syns.append(s)
+            result.append(syns[:limit])
+        while len(result) < len(words):
+            result.append([])
+        return result[: len(words)]
+    except Exception:
+        return [[] for _ in words]
+
+
 def evaluate_ielts_writing(
     text: str,
     word_limit_min: int | None = None,

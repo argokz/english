@@ -709,6 +709,22 @@ class _DeckScreenState extends State<DeckScreen> {
               ],
             ],
           ),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: InkWell(
+              onTap: () => _showExamplesForCard(first),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  (first.examples != null && first.examples!.isNotEmpty)
+                      ? 'Примеры (${first.examples!.length})'
+                      : 'Запросить примеры',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.primary),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

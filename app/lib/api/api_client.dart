@@ -337,12 +337,12 @@ class ApiClient {
     );
   }
 
-  /// Suggest synonym groups for deck (Gemini clusters).
+  /// Suggest synonym groups for deck (Gemini clusters). Долгий запрос — батч по 10 карточек.
   Future<List<SynonymGroup>> suggestSynonymGroups(String deckId, {int limit = 30}) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'ai/synonym-groups/suggest',
       queryParameters: {'deck_id': deckId, 'limit': limit},
-      options: Options(receiveTimeout: _kLongRequestTimeout),
+      options: Options(receiveTimeout: _kBackfillPosTimeout),
     );
     final list = r.data!['groups'] as List? ?? [];
     return list.map((e) => SynonymGroup.fromJson(e as Map<String, dynamic>)).toList();
