@@ -190,8 +190,8 @@ async def _run_backfill_transcriptions_background(deck_id: UUID | None, user_id:
 
 @router.post("/backfill-transcriptions")
 async def backfill_transcriptions(
-    body: BackfillTranscriptionsRequest | None = None,
     background_tasks: BackgroundTasks,
+    body: BackfillTranscriptionsRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

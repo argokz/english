@@ -147,11 +147,23 @@ class _DeckScreenState extends State<DeckScreen> {
     try {
       final message = await api.backfillTranscriptions(deckId: widget.deckId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-        _load();
+        Navigator.of(context).pop(); // Закрываем диалог загрузки
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Обновить',
+              onPressed: () => _load(),
+            ),
+          ),
+        );
+        // Не вызываем _load() сразу, чтобы избежать таймаута
+        // Пользователь может обновить вручную через кнопку в SnackBar
       }
     } catch (e) {
       if (mounted) {
+        Navigator.of(context).pop(); // Закрываем диалог загрузки
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Ошибка: $e'),
@@ -159,8 +171,6 @@ class _DeckScreenState extends State<DeckScreen> {
           ),
         );
       }
-    } finally {
-      if (mounted) Navigator.of(context).pop();
     }
   }
 
@@ -177,11 +187,23 @@ class _DeckScreenState extends State<DeckScreen> {
     try {
       final message = await api.backfillPos(widget.deckId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-        _load();
+        Navigator.of(context).pop(); // Закрываем диалог загрузки
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Обновить',
+              onPressed: () => _load(),
+            ),
+          ),
+        );
+        // Не вызываем _load() сразу, чтобы избежать таймаута
+        // Пользователь может обновить вручную через кнопку в SnackBar
       }
     } catch (e) {
       if (mounted) {
+        Navigator.of(context).pop(); // Закрываем диалог загрузки
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Ошибка: $e'),
@@ -189,8 +211,6 @@ class _DeckScreenState extends State<DeckScreen> {
           ),
         );
       }
-    } finally {
-      if (mounted) Navigator.of(context).pop();
     }
   }
 
