@@ -76,11 +76,9 @@ def _model():
     return genai.GenerativeModel(model_name)
 
 
-def _generate_content_with_fallback(prompt: str) -> str:
+def _generate_content_gemini_only(prompt: str) -> str:
     """
-    Вызов generate_content с автоматическим переключением модели при исчерпании квоты.
-    Все функции, использующие Gemini generate_content, должны вызывать это.
-    Общая переменная _current_model_index обновляется здесь — все последующие вызовы используют новую модель.
+    Только Gemini: перебор моделей при исчерпании квоты/ошибке. При неудаче по всем моделям — ValueError.
     """
     models = _get_gemini_models()
     max_attempts = len(models)
@@ -88,30 +86,68 @@ def _generate_content_with_fallback(prompt: str) -> str:
     for attempt in range(max_attempts):
         try:
             current_model_name = _get_current_model_name()
-            logger.debug(f"Попытка {attempt + 1}/{max_attempts}: модель {current_model_name}")
+            logger.debug("Gemini попытка %s/%s: модель %s", attempt + 1, max_attempts, current_model_name)
             response = _model().generate_content(prompt)
             text = (response.text or "").strip()
-            logger.debug(f"Успешно, модель {current_model_name}")
+            logger.debug("Gemini успешно, модель %s", current_model_name)
             return text
         except google_exceptions.ResourceExhausted as e:
             last_error = e
-            logger.warning(f"Квота исчерпана для {_get_current_model_name()}, переключаемся на следующую модель")
+            logger.warning("Квота исчерпана для %s, переключаемся на следующую модель", _get_current_model_name())
             if attempt < max_attempts - 1:
                 _switch_to_next_model()
             else:
                 retry_delay = 60
                 error_msg = str(e)
                 if "retry" in error_msg.lower():
-                    import re as re_module
-                    delay_match = re_module.search(r"retry in ([\d.]+)s", error_msg, re_module.I)
+                    delay_match = re.search(r"retry in ([\d.]+)s", error_msg, re.I)
                     if delay_match:
                         retry_delay = int(float(delay_match.group(1))) + 5
                 raise ValueError(
-                    f"Превышен лимит запросов для всех моделей Gemini. Попробуйте через {retry_delay} с или перейдите на платный тариф."
+                    f"Превышен лимит запросов для всех моделей Gemini. Попробуйте через {retry_delay} с."
                 ) from e
+        except Exception as e:
+            last_error = e
+            logger.warning("Gemini ошибка для %s: %s", _get_current_model_name(), e)
+            if attempt < max_attempts - 1:
+                _switch_to_next_model()
+            else:
+                raise ValueError(f"Все модели Gemini недоступны: {e}") from e
     if last_error:
-        raise ValueError("Все модели исчерпали квоту") from last_error
+        raise ValueError("Все модели Gemini исчерпали квоту") from last_error
     return ""
+
+
+def _generate_content_with_fallback(prompt: str) -> str:
+    """
+    Единая точка генерации: приоритет из AI_PRIORITY (gpt | gemini).
+    Если все модели приоритетного провайдера недоступны — переключение на второй провайдер (GPT ↔ Gemini).
+    """
+    priority = (getattr(settings, "ai_priority", None) or "gemini").strip().lower()
+    if priority == "gpt":
+        try:
+            from app.services import openai_service
+            return openai_service.generate_content(prompt)
+        except ValueError as e1:
+            logger.warning("OpenAI недоступен (%s), пробуем Gemini", e1)
+        try:
+            return _generate_content_gemini_only(prompt)
+        except ValueError as e2:
+            raise ValueError(
+                f"Сначала все модели GPT недоступны ({e1}). Затем все модели Gemini тоже недоступны ({e2})."
+            ) from e2
+    # priority == "gemini" или любое другое значение
+    try:
+        return _generate_content_gemini_only(prompt)
+    except ValueError as e1:
+        logger.warning("Gemini недоступен (%s), пробуем OpenAI", e1)
+        try:
+            from app.services import openai_service
+            return openai_service.generate_content(prompt)
+        except ValueError as e2:
+            raise ValueError(
+                f"Сначала все модели Gemini недоступны ({e1}). Затем все модели GPT тоже недоступны ({e2})."
+            ) from e2
 
 
 def generate_word_list(level: str | None = None, topic: str | None = None, count: int = 20) -> list[dict[str, str]]:
@@ -149,24 +185,90 @@ Do not add numbering or extra text. Only lines in format: word | translation | e
 
 def enrich_word(word: str) -> dict[str, str]:
     """Get translation, example, and transcription for one word. Returns {translation, example, transcription}."""
-    prompt = f"""For the English word "{word}" provide:
-1) Russian translation (one word or short phrase)
-2) One short example sentence in English using this word.
-3) IPA phonetic transcription in square brackets (e.g., [ˈæpl])
+    data = enrich_word_with_pos(word)
+    if data.get("senses"):
+        first = data["senses"][0]
+        return {
+            "translation": first.get("translation", ""),
+            "example": first.get("example", ""),
+            "transcription": data.get("transcription") or "",
+        }
+    return {"translation": "", "example": "", "transcription": ""}
 
-Reply in JSON only: {{"translation": "...", "example": "...", "transcription": "..."}}"""
+
+def enrich_word_with_pos(word: str) -> dict[str, Any]:
+    """Get all parts of speech for word: senses (part_of_speech, translation, example), transcription, pronunciation_url."""
+    prompt = f'''For the English word "{word}" provide:
+1) One IPA phonetic transcription in square brackets (e.g., [bʊk]) — same for all meanings.
+2) For EACH part of speech the word can have (noun, verb, adjective, adverb), provide:
+   - part_of_speech: one of "noun", "verb", "adjective", "adverb"
+   - translation: Russian translation (one word or short phrase)
+   - example: one short example sentence in English using this word in that sense
+
+Reply in JSON only with this exact structure:
+{{"transcription": "[...]", "senses": [{{"part_of_speech": "noun", "translation": "...", "example": "..."}}, ...]}}
+Include only the parts of speech that apply to this word.'''
 
     text = _generate_content_with_fallback(prompt)
-    m = re.search(r"\{[^{}]*\"translation\"[^{}]*\"example\"[^{}]*\"transcription\"[^{}]*\}", text)
+    # Match outer {...} that contains "senses"
+    m = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\"senses\"[^{}]*(?:\[.*?\])[^{}]*\}", text, re.DOTALL)
+    if not m:
+        m = re.search(r"\{.*\"senses\".*\}", text, re.DOTALL)
+    if not m:
+        m = re.search(r"\{[^{}]*\"transcription\"[^{}]*\}", text)
     if m:
         try:
-            result = json.loads(m.group())
-            if "transcription" in result and result["transcription"]:
-                result["transcription"] = result["transcription"].strip("[]")
-            return result
+            raw = m.group(0)
+            # Fix possible trailing commas before ] or }
+            raw = re.sub(r",\s*([}\]])", r"\1", raw)
+            result = json.loads(raw)
+            transcription = result.get("transcription") or ""
+            if isinstance(transcription, str):
+                transcription = transcription.strip("[]")
+            senses = result.get("senses") or []
+            if not isinstance(senses, list):
+                senses = []
+            normalized = []
+            for s in senses:
+                if not isinstance(s, dict):
+                    continue
+                pos = (s.get("part_of_speech") or "").strip().lower()
+                if pos not in ("noun", "verb", "adjective", "adverb"):
+                    continue
+                normalized.append({
+                    "part_of_speech": pos,
+                    "translation": (s.get("translation") or "").strip(),
+                    "example": (s.get("example") or "").strip(),
+                })
+            if not normalized:
+                # Fallback: single sense without POS
+                trans = (result.get("translation") or "").strip()
+                ex = (result.get("example") or "").strip()
+                if trans or ex:
+                    normalized = [{"part_of_speech": "noun", "translation": trans, "example": ex}]
+            return {
+                "transcription": transcription or None,
+                "senses": normalized,
+            }
         except json.JSONDecodeError:
             pass
-    return {"translation": "", "example": "", "transcription": ""}
+    return {"transcription": None, "senses": []}
+
+
+def translate(text: str, source_lang: str, target_lang: str) -> str:
+    """Translate text between Russian and English. source_lang/target_lang: 'ru' or 'en'."""
+    if not (text or "").strip():
+        return ""
+    src = "Russian" if source_lang.strip().lower() == "ru" else "English"
+    tgt = "Russian" if target_lang.strip().lower() == "ru" else "English"
+    prompt = f"""Translate the following text from {src} to {tgt}. Output only the translation, no explanations.
+Text: {text.strip()}
+Translation:"""
+    try:
+        result = _generate_content_with_fallback(prompt)
+        return (result or "").strip()
+    except Exception:
+        return ""
 
 
 def get_pronunciation_url(word: str) -> str | None:

@@ -10,6 +10,7 @@ class CardModel {
   final String state;
   final DateTime due;
   final String? synonymGroupId;
+  final String? partOfSpeech;
 
   CardModel({
     required this.id,
@@ -23,6 +24,7 @@ class CardModel {
     required this.state,
     required this.due,
     this.synonymGroupId,
+    this.partOfSpeech,
   });
 
   factory CardModel.fromJson(Map<String, dynamic> json) {
@@ -38,6 +40,7 @@ class CardModel {
       state: json['state'] as String? ?? 'learning',
       due: DateTime.parse(json['due'] as String),
       synonymGroupId: json['synonym_group_id'] as String?,
+      partOfSpeech: json['part_of_speech'] as String?,
     );
   }
 }

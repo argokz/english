@@ -8,13 +8,29 @@ from app.models.deck import Deck
 
 
 async def exists_card_in_deck(session: AsyncSession, deck_id: UUID, word: str) -> bool:
-    """Проверка без учёта регистра: есть ли уже такое слово в колоде."""
+    """Проверка без учёта регистра: есть ли уже такое слово в колоде (любая часть речи)."""
     if not (word or "").strip():
         return False
     w = word.strip().lower()
     result = await session.execute(
         select(Card.id).where(Card.deck_id == deck_id, func.lower(Card.word) == w).limit(1)
     )
+    return result.scalars().first() is not None
+
+
+async def exists_card_in_deck_with_pos(
+    session: AsyncSession, deck_id: UUID, word: str, part_of_speech: str | None
+) -> bool:
+    """Есть ли уже карточка с этим словом и этой частью речи в колоде."""
+    if not (word or "").strip():
+        return False
+    w = word.strip().lower()
+    q = select(Card.id).where(Card.deck_id == deck_id, func.lower(Card.word) == w)
+    if part_of_speech:
+        q = q.where(Card.part_of_speech == part_of_speech)
+    else:
+        q = q.where(Card.part_of_speech.is_(None))
+    result = await session.execute(q.limit(1))
     return result.scalars().first() is not None
 
 
@@ -69,14 +85,16 @@ async def create_card(
     embedding: list[float] | None = None,
     transcription: str | None = None,
     pronunciation_url: str | None = None,
+    part_of_speech: str | None = None,
 ) -> Card:
     card = Card(
-        deck_id=deck_id, 
-        word=word, 
-        translation=translation, 
+        deck_id=deck_id,
+        word=word,
+        translation=translation,
         example=example,
         transcription=transcription,
         pronunciation_url=pronunciation_url,
+        part_of_speech=part_of_speech,
     )
     if embedding is not None:
         card.embedding = embedding

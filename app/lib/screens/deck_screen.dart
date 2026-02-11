@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../api/api_client.dart';
 import '../core/app_theme.dart';
+import '../core/pos_colors.dart';
 import '../models/card.dart' as app;
 import '../providers/auth_provider.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_overlay.dart';
 import 'add_word_screen.dart';
+import 'bulk_add_words_screen.dart';
 import 'generate_words_screen.dart';
 import 'study_screen.dart';
 import 'similar_words_screen.dart';
@@ -233,8 +235,18 @@ class _DeckScreenState extends State<DeckScreen> {
               if (value == 'backfill') _runBackfillTranscriptions();
               else if (value == 'remove_duplicates') _runRemoveDuplicates();
               else if (value == 'synonym_groups') _showSuggestSynonymGroups();
+              else if (value == 'bulk_add') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BulkAddWordsScreen(deckId: widget.deckId),
+                  ),
+                );
+                _load();
+              }
             },
             itemBuilder: (_) => [
+              const PopupMenuItem(value: 'bulk_add', child: Text('Добавить несколько слов')),
               const PopupMenuItem(value: 'backfill', child: Text('Обновить транскрипции')),
               const PopupMenuItem(value: 'synonym_groups', child: Text('Найти группы синонимов')),
               const PopupMenuItem(value: 'remove_duplicates', child: Text('Удалить дубликаты слов')),
@@ -400,6 +412,110 @@ class _DeckScreenState extends State<DeckScreen> {
     );
   }
 
+  /// Group cards by word (case-insensitive). One row per word with all translations and POS chips.
+  static Map<String, List<app.CardModel>> _groupByWord(List<app.CardModel> cards) {
+    final map = <String, List<app.CardModel>>{};
+    for (final c in cards) {
+      final w = (c.word).trim().toLowerCase();
+      if (w.isEmpty) continue;
+      map.putIfAbsent(w, () => []).add(c);
+    }
+    for (final list in map.values) {
+      list.sort((a, b) => (a.partOfSpeech ?? '').compareTo(b.partOfSpeech ?? ''));
+    }
+    return map;
+  }
+
+  Future<void> _deleteWordGroup(List<app.CardModel> groupCards) async {
+    try {
+      for (final c in groupCards) {
+        await context.read<AuthProvider>().api.deleteCard(c.id);
+      }
+      if (mounted) _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
+  }
+
+  Widget _buildWordGroupTile(String wordKey, List<app.CardModel> groupCards) {
+    final first = groupCards.first;
+    final word = first.word;
+    String? transcription;
+    for (final c in groupCards) {
+      if (c.transcription != null && c.transcription!.isNotEmpty) {
+        transcription = c.transcription;
+        break;
+      }
+    }
+    transcription ??= first.transcription;
+    app.CardModel? cardForPlay;
+    for (final c in groupCards) {
+      if (c.pronunciationUrl != null && c.pronunciationUrl!.isNotEmpty) {
+        cardForPlay = c;
+        break;
+      }
+    }
+    cardForPlay ??= first;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    word,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.volume_up, size: 22),
+                  onPressed: () => _playWord(cardForPlay!),
+                  tooltip: 'Произношение',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _deleteWordGroup(groupCards),
+                  tooltip: 'Удалить слово',
+                ),
+              ],
+            ),
+            if (transcription != null && transcription.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text('/$transcription/', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey[600])),
+              ),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final c in groupCards) ...[
+                  Chip(
+                    avatar: c.partOfSpeech != null && c.partOfSpeech!.isNotEmpty
+                        ? CircleAvatar(backgroundColor: PosColors.colorFor(c.partOfSpeech), radius: 10)
+                        : null,
+                    label: Text(
+                      c.partOfSpeech != null && c.partOfSpeech!.isNotEmpty
+                          ? '${PosColors.labelFor(c.partOfSpeech)} ${c.translation}'
+                          : c.translation,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFlatList() {
     final cards = _getFilteredCards();
     if (cards.isEmpty) {
@@ -408,10 +524,12 @@ class _DeckScreenState extends State<DeckScreen> {
         message: _searchQuery.isEmpty ? 'Нет карточек в колоде' : 'Ничего не найдено по «$_searchQuery»',
       );
     }
+    final byWord = _groupByWord(cards);
+    final wordKeys = byWord.keys.toList()..sort((a, b) => a.compareTo(b));
     return ListView.builder(
       padding: const EdgeInsets.all(8),
-      itemCount: cards.length,
-      itemBuilder: (context, i) => _buildCardTile(cards[i]),
+      itemCount: wordKeys.length,
+      itemBuilder: (context, i) => _buildWordGroupTile(wordKeys[i], byWord[wordKeys[i]]!),
     );
   }
 

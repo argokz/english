@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     redirect_uri: str = "http://localhost:8007/auth/google/callback"
     frontend_redirect_uri: str = "englishapp://auth"  # Flutter deep link; token in fragment
+    # AI provider priority: "gpt" — сначала OpenAI, при недоступности Gemini; "gemini" — наоборот
+    ai_priority: str = "gemini"
+    # OpenAI (GPT)
+    openai_api_key: str = ""
+    openai_models: str = "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo"  # Список моделей для переключения при ошибках
     # Gemini
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
@@ -35,6 +40,12 @@ if os.getenv("DATABASE_URL"):
     settings.database_url = os.getenv("DATABASE_URL").replace(
         "postgresql://", "postgresql+asyncpg://", 1
     )
+if os.getenv("AI_PRIORITY"):
+    settings.ai_priority = os.getenv("AI_PRIORITY", "gemini").strip().lower()
+if os.getenv("OPENAI_API_KEY"):
+    settings.openai_api_key = os.getenv("OPENAI_API_KEY")
+if os.getenv("OPENAI_MODELS"):
+    settings.openai_models = os.getenv("OPENAI_MODELS")
 if os.getenv("GEMINI_API_KEY"):
     settings.gemini_api_key = os.getenv("GEMINI_API_KEY")
 if os.getenv("GEMINI_MODEL"):

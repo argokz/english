@@ -10,8 +10,11 @@ from app.db.repositories import deck_repo, card_repo, writing_repo
 from app.services import gemini_service
 from app.schemas.ai import (
     GenerateWordsRequest,
+    TranslateRequest,
+    TranslateResponse,
     EnrichWordRequest,
     EnrichWordResponse,
+    EnrichWordSense,
     SimilarWordItem,
     BackfillTranscriptionsRequest,
     BackfillTranscriptionsResponse,
@@ -67,6 +70,24 @@ async def generate_words(
     return {"created": created, "skipped_duplicates": skipped_duplicates}
 
 
+@router.post("/translate", response_model=TranslateResponse)
+async def translate(
+    body: TranslateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+    sl = body.source_lang.strip().lower()
+    tl = body.target_lang.strip().lower()
+    if sl not in ("ru", "en") or tl not in ("ru", "en") or sl == tl:
+        raise HTTPException(status_code=400, detail="source_lang and target_lang must be 'ru' and 'en' (different)")
+    try:
+        translation = gemini_service.translate(body.text.strip(), sl, tl)
+    except ValueError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    return TranslateResponse(translation=translation, source_lang=sl, target_lang=tl)
+
+
 @router.post("/enrich-word", response_model=EnrichWordResponse)
 async def enrich_word(
     body: EnrichWordRequest,
@@ -76,16 +97,19 @@ async def enrich_word(
         raise HTTPException(status_code=400, detail="word is required")
     word = body.word.strip()
     try:
-        result = gemini_service.enrich_word(word)
+        result = gemini_service.enrich_word_with_pos(word)
     except ValueError as e:
-        # Ошибка превышения квоты
         raise HTTPException(status_code=429, detail=str(e))
     pronunciation_url = gemini_service.get_pronunciation_url(word)
+    senses = result.get("senses") or []
+    first_translation = senses[0]["translation"] if senses else ""
+    first_example = senses[0]["example"] if senses else ""
     return EnrichWordResponse(
-        translation=result.get("translation", ""),
-        example=result.get("example", ""),
-        transcription=result.get("transcription", ""),
+        translation=first_translation,
+        example=first_example,
+        transcription=result.get("transcription") or None,
         pronunciation_url=pronunciation_url,
+        senses=[EnrichWordSense(part_of_speech=s["part_of_speech"], translation=s["translation"], example=s["example"]) for s in senses],
     )
 
 

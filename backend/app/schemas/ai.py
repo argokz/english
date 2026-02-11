@@ -9,15 +9,34 @@ class GenerateWordsRequest(BaseModel):
     count: int = 20
 
 
+class TranslateRequest(BaseModel):
+    text: str
+    source_lang: str  # "ru" | "en"
+    target_lang: str  # "en" | "ru"
+
+
+class TranslateResponse(BaseModel):
+    translation: str
+    source_lang: str
+    target_lang: str
+
+
 class EnrichWordRequest(BaseModel):
     word: str
 
 
-class EnrichWordResponse(BaseModel):
+class EnrichWordSense(BaseModel):
+    part_of_speech: str  # noun, verb, adjective, adverb
     translation: str
     example: str
+
+
+class EnrichWordResponse(BaseModel):
+    translation: str = ""  # backward compat: first sense translation
+    example: str = ""  # backward compat: first sense example
     transcription: str | None = None
     pronunciation_url: str | None = None
+    senses: list[EnrichWordSense] = []  # all POS variants
 
 
 class SimilarWordItem(BaseModel):

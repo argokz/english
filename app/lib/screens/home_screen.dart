@@ -136,6 +136,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 leading: CircleAvatar(
                   backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  child: Icon(Icons.translate, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                ),
+                title: const Text('Переводчик'),
+                subtitle: const Text('Русский ↔ English, создать карточку из перевода'),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () => context.push('/translator'),
+              ),
+            ),
+            Card(
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                leading: CircleAvatar(
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                   child: Icon(Icons.edit_note, color: Theme.of(context).colorScheme.onPrimaryContainer),
                 ),
                 title: const Text('IELTS Письмо'),

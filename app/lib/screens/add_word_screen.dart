@@ -2,7 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../api/api_client.dart';
 import '../core/app_theme.dart';
+import '../core/pos_colors.dart';
 import '../providers/auth_provider.dart';
 
 class AddWordScreen extends StatefulWidget {
@@ -16,20 +18,20 @@ class AddWordScreen extends StatefulWidget {
 
 class _AddWordScreenState extends State<AddWordScreen> {
   final _wordController = TextEditingController();
-  final _translationController = TextEditingController();
-  final _exampleController = TextEditingController();
   bool _loading = false;
   bool _enriching = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
-  String? _transcription;
-  String? _pronunciationUrl;
+  EnrichWordResult? _enrichResult;
+  final Set<int> _selectedSenseIndices = {};
 
   @override
   void dispose() {
     _audioPlayer.dispose();
     super.dispose();
   }
+
+  String? get _pronunciationUrl => _enrichResult?.pronunciationUrl;
 
   Future<void> _playWord() async {
     final word = _wordController.text.trim();
@@ -53,10 +55,13 @@ class _AddWordScreenState extends State<AddWordScreen> {
     try {
       final result = await context.read<AuthProvider>().api.enrichWord(word);
       if (mounted) {
-        _translationController.text = result['translation'] ?? '';
-        _exampleController.text = result['example'] ?? '';
-        _transcription = result['transcription'];
-        _pronunciationUrl = result['pronunciation_url'];
+        setState(() {
+          _enrichResult = result;
+          _selectedSenseIndices.clear();
+          for (var i = 0; i < result.senses.length; i++) {
+            _selectedSenseIndices.add(i);
+          }
+        });
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка подсказки: $e')));
@@ -67,23 +72,46 @@ class _AddWordScreenState extends State<AddWordScreen> {
 
   Future<void> _save() async {
     final word = _wordController.text.trim();
-    final translation = _translationController.text.trim();
-    if (word.isEmpty || translation.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Введите слово и перевод')));
+    if (word.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Введите слово')));
+      return;
+    }
+    if (_enrichResult == null || _selectedSenseIndices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Нажмите «Подсказать» и выберите переводы для сохранения')));
       return;
     }
     setState(() => _loading = true);
+    var saved = 0;
+    var skipped = 0;
     try {
-      await context.read<AuthProvider>().api.createCard(
+      final api = context.read<AuthProvider>().api;
+      final r = _enrichResult!;
+      for (final i in _selectedSenseIndices) {
+        if (i < 0 || i >= r.senses.length) continue;
+        final sense = r.senses[i];
+        try {
+          await api.createCard(
             widget.deckId,
             word: word,
-            translation: translation,
-            example: _exampleController.text.trim().isEmpty ? null : _exampleController.text.trim(),
-            transcription: _transcription,
-            pronunciationUrl: _pronunciationUrl,
+            translation: sense.translation,
+            example: sense.example.isEmpty ? null : sense.example,
+            transcription: r.transcription,
+            pronunciationUrl: r.pronunciationUrl,
+            partOfSpeech: sense.partOfSpeech.isEmpty ? null : sense.partOfSpeech,
           );
+          saved++;
+        } on DioException catch (e) {
+          if (e.response?.statusCode == 409) {
+            skipped++;
+          } else {
+            rethrow;
+          }
+        }
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сохранено')));
+        String msg = 'Добавлено: $saved';
+        if (skipped > 0) msg += ', пропущено (уже в колоде): $skipped';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
         Navigator.pop(context);
       }
     } catch (e) {
@@ -101,6 +129,8 @@ class _AddWordScreenState extends State<AddWordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasResult = _enrichResult != null && _enrichResult!.senses.isNotEmpty;
+    final transcription = _enrichResult?.transcription;
     return Scaffold(
       appBar: AppBar(title: const Text('Добавить слово')),
       body: SingleChildScrollView(
@@ -132,55 +162,92 @@ class _AddWordScreenState extends State<AddWordScreen> {
                 ),
               ],
             ),
-            if (_transcription != null && _transcription!.isNotEmpty) ...[
+            if (transcription != null && transcription.isNotEmpty) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
                   Text('Транскрипция: ', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  Text('/$_transcription/', style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic)),
+                  Text('/$transcription/', style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic)),
                 ],
               ),
             ],
             const SizedBox(height: 16),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _translationController,
-                    decoration: const InputDecoration(labelText: 'Перевод', hintText: 'яблоко'),
+            FilledButton.tonal(
+              onPressed: _enriching ? null : _enrich,
+              style: FilledButton.styleFrom(minimumSize: const Size(0, AppTheme.buttonMinHeight)),
+              child: _enriching
+                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Подсказать'),
+            ),
+            if (hasResult) ...[
+              const SizedBox(height: 20),
+              Text('Переводы по частям речи', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              ...List.generate(_enrichResult!.senses.length, (i) {
+                final sense = _enrichResult!.senses[i];
+                final selected = _selectedSenseIndices.contains(i);
+                final posLabel = sense.partOfSpeech.isNotEmpty ? PosColors.labelFor(sense.partOfSpeech) : '';
+                final posColor = PosColors.colorFor(sense.partOfSpeech.isEmpty ? null : sense.partOfSpeech);
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: InkWell(
+                    onTap: () => setState(() {
+                      if (selected) _selectedSenseIndices.remove(i); else _selectedSenseIndices.add(i);
+                    }),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            value: selected,
+                            onChanged: (v) => setState(() {
+                              if (v == true) _selectedSenseIndices.add(i); else _selectedSenseIndices.remove(i);
+                            }),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (posLabel.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Chip(
+                                      label: Text(posLabel, style: const TextStyle(fontSize: 12)),
+                                      backgroundColor: posColor.withValues(alpha: 0.2),
+                                      side: BorderSide(color: posColor, width: 1),
+                                      padding: EdgeInsets.zero,
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                Text(sense.translation, style: Theme.of(context).textTheme.bodyLarge),
+                                if (sense.example.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(sense.example, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
+                );
+              }),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _loading ? null : _save,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, AppTheme.buttonMinHeight + 8),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                const SizedBox(width: 12),
-                FilledButton.tonal(
-                  onPressed: _enriching ? null : _enrich,
-                  style: FilledButton.styleFrom(minimumSize: const Size(0, AppTheme.buttonMinHeight)),
-                  child: _enriching
-                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Подсказать'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _exampleController,
-              decoration: const InputDecoration(
-                labelText: 'Пример (необяз.)',
-                alignLabelWithHint: true,
+                child: _loading
+                    ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Сохранить выбранные'),
               ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 28),
-            FilledButton(
-              onPressed: _loading ? null : _save,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(0, AppTheme.buttonMinHeight + 8),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: _loading
-                  ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Сохранить'),
-            ),
+            ],
           ],
         ),
       ),

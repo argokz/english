@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/app_theme.dart';
+import '../core/pos_colors.dart';
 import '../models/card.dart' as app;
 import '../models/study_mode.dart';
 import '../providers/auth_provider.dart';
@@ -200,7 +201,11 @@ class _StudyScreenState extends State<StudyScreen> {
     final frontText = currentMode == StudyMode.englishToRussian ? card.word : card.translation;
     final backText = currentMode == StudyMode.englishToRussian ? card.translation : card.word;
     final showTranscription = currentMode == StudyMode.englishToRussian && card.transcription != null;
-    
+    final posLabel = (currentMode == StudyMode.englishToRussian && card.partOfSpeech != null && card.partOfSpeech!.isNotEmpty)
+        ? PosColors.labelFor(card.partOfSpeech)
+        : null;
+    final posColor = posLabel != null ? PosColors.colorFor(card.partOfSpeech) : null;
+
     return Scaffold(
       appBar: AppBar(title: Text('${widget.deckName} (осталось ${_queue!.length})')),
       body: SafeArea(
@@ -212,6 +217,10 @@ class _StudyScreenState extends State<StudyScreen> {
               // Лицевая сторона карточки
               Card(
                 elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                  side: posColor != null ? BorderSide(color: posColor!, width: 3) : BorderSide.none,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
@@ -222,6 +231,17 @@ class _StudyScreenState extends State<StudyScreen> {
                         style: Theme.of(context).textTheme.headlineLarge,
                         textAlign: TextAlign.center,
                       ),
+                      if (posLabel != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '($posLabel)',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: posColor ?? Colors.grey,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                       if (showTranscription && (card.transcription != null && card.transcription!.isNotEmpty)) ...[
                         const SizedBox(height: 8),
                         Text(

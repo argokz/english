@@ -8,6 +8,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/ielts_writing_screen.dart';
+import 'screens/translator_screen.dart';
 
 void main() {
   final authProvider = AuthProvider();
@@ -71,6 +72,7 @@ class _EnglishWordsAppState extends State<EnglishWordsApp> {
           routes: [
             GoRoute(path: 'settings', builder: (_, __) => const SettingsScreen()),
             GoRoute(path: 'writing', builder: (_, __) => const IeltsWritingScreen()),
+            GoRoute(path: 'translator', builder: (_, __) => const TranslatorScreen()),
           ],
         ),
       ],

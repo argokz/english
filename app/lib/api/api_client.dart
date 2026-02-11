@@ -5,6 +5,35 @@ import '../models/deck.dart';
 import '../models/card.dart' as app;
 import '../models/similar_word.dart';
 
+class EnrichWordSense {
+  final String partOfSpeech;
+  final String translation;
+  final String example;
+  EnrichWordSense({required this.partOfSpeech, required this.translation, required this.example});
+}
+
+class EnrichWordResult {
+  final String translation;
+  final String example;
+  final String? transcription;
+  final String? pronunciationUrl;
+  final List<EnrichWordSense> senses;
+  EnrichWordResult({
+    required this.translation,
+    required this.example,
+    this.transcription,
+    this.pronunciationUrl,
+    required this.senses,
+  });
+}
+
+class TranslateResult {
+  final String translation;
+  final String sourceLang;
+  final String targetLang;
+  TranslateResult({required this.translation, required this.sourceLang, required this.targetLang});
+}
+
 /// Таймаут для запросов к Gemini (генерация слов, бэкфилл, синонимы): ждём ответа долго, прерываем только при реальной ошибке.
 const Duration _kLongRequestTimeout = Duration(seconds: 180);
 const Duration _kConnectTimeout = Duration(seconds: 20);
@@ -107,14 +136,23 @@ class ApiClient {
     return (r.data ?? []).map((e) => app.CardModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<app.CardModel> createCard(String deckId, {required String word, required String translation, String? example, String? transcription, String? pronunciationUrl}) async {
-    final r = await _dio.post<Map<String, dynamic>>('decks/$deckId/cards', data: {
+  Future<app.CardModel> createCard(String deckId, {
+    required String word,
+    required String translation,
+    String? example,
+    String? transcription,
+    String? pronunciationUrl,
+    String? partOfSpeech,
+  }) async {
+    final data = <String, dynamic>{
       'word': word,
       'translation': translation,
       if (example != null && example.isNotEmpty) 'example': example,
       if (transcription != null && transcription.isNotEmpty) 'transcription': transcription,
       if (pronunciationUrl != null && pronunciationUrl.isNotEmpty) 'pronunciation_url': pronunciationUrl,
-    });
+      if (partOfSpeech != null && partOfSpeech.isNotEmpty) 'part_of_speech': partOfSpeech,
+    };
+    final r = await _dio.post<Map<String, dynamic>>('decks/$deckId/cards', data: data);
     return app.CardModel.fromJson(r.data!);
   }
 
@@ -161,18 +199,62 @@ class ApiClient {
     return r.data!['removed'] as int? ?? 0;
   }
 
-  Future<Map<String, String>> enrichWord(String word) async {
+  /// Translate text between Russian and English. sourceLang/targetLang: 'ru' | 'en'.
+  Future<TranslateResult> translate(String text, {required String sourceLang, required String targetLang}) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'ai/translate',
+      data: {
+        'text': text,
+        'source_lang': sourceLang,
+        'target_lang': targetLang,
+      },
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
+    final d = r.data!;
+    return TranslateResult(
+      translation: d['translation'] as String? ?? '',
+      sourceLang: d['source_lang'] as String? ?? sourceLang,
+      targetLang: d['target_lang'] as String? ?? targetLang,
+    );
+  }
+
+  /// Enrich word: all senses by part of speech + common transcription and pronunciation.
+  Future<EnrichWordResult> enrichWord(String word) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'ai/enrich-word',
       data: {'word': word},
       options: Options(receiveTimeout: _kLongRequestTimeout),
     );
-    return {
-      'translation': r.data!['translation'] as String? ?? '',
-      'example': r.data!['example'] as String? ?? '',
-      'transcription': r.data!['transcription'] as String? ?? '',
-      'pronunciation_url': r.data!['pronunciation_url'] as String? ?? '',
-    };
+    final d = r.data!;
+    final sensesList = d['senses'] as List<dynamic>?;
+    List<EnrichWordSense> senses = [];
+    if (sensesList != null && sensesList.isNotEmpty) {
+      for (final s in sensesList) {
+        final m = s as Map<String, dynamic>?;
+        if (m == null) continue;
+        senses.add(EnrichWordSense(
+          partOfSpeech: m['part_of_speech'] as String? ?? '',
+          translation: m['translation'] as String? ?? '',
+          example: m['example'] as String? ?? '',
+        ));
+      }
+    }
+    if (senses.isEmpty) {
+      senses = [
+        EnrichWordSense(
+          partOfSpeech: '',
+          translation: d['translation'] as String? ?? '',
+          example: d['example'] as String? ?? '',
+        ),
+      ];
+    }
+    return EnrichWordResult(
+      translation: d['translation'] as String? ?? (senses.isNotEmpty ? senses.first.translation : ''),
+      example: d['example'] as String? ?? (senses.isNotEmpty ? senses.first.example : ''),
+      transcription: d['transcription'] as String?,
+      pronunciationUrl: d['pronunciation_url'] as String?,
+      senses: senses,
+    );
   }
 
   Future<List<SimilarWord>> similarWords(String word, {String? deckId, int limit = 10}) async {
