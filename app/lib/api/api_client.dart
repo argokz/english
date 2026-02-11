@@ -44,8 +44,10 @@ class BackfillPosResult {
   BackfillPosResult({required this.updated, required this.created, required this.skipped, required this.errors});
 }
 
-/// Таймаут для запросов к Gemini (генерация слов, бэкфилл, синонимы): ждём ответа долго, прерываем только при реальной ошибке.
+/// Таймаут для запросов к Gemini (генерация слов, синонимы и т.д.).
 const Duration _kLongRequestTimeout = Duration(seconds: 180);
+/// Таймаут для backfill-pos: много карточек × запрос к AI — может занимать 5–10+ минут.
+const Duration _kBackfillPosTimeout = Duration(minutes: 15);
 const Duration _kConnectTimeout = Duration(seconds: 20);
 const Duration _kDefaultReceiveTimeout = Duration(seconds: 90);
 
@@ -223,7 +225,7 @@ class ApiClient {
     final r = await _dio.post<Map<String, dynamic>>(
       'decks/$deckId/backfill-pos',
       data: {'limit': limit},
-      options: Options(receiveTimeout: _kLongRequestTimeout),
+      options: Options(receiveTimeout: _kBackfillPosTimeout),
     );
     final d = r.data!;
     return BackfillPosResult(

@@ -172,41 +172,49 @@ async def backfill_pos(
     created = 0
     skipped = 0
     errors = 0
-    for card in cards:
+    batch_size = gemini_service.BATCH_ENRICH_SIZE
+    for offset in range(0, len(cards), batch_size):
+        chunk = cards[offset : offset + batch_size]
+        words = [card.word or "" for card in chunk]
         try:
-            data = gemini_service.enrich_word_with_pos(card.word or "")
-            senses = data.get("senses") or []
-            if not senses:
-                skipped += 1
-                continue
-            transcription = data.get("transcription")
-            pronunciation_url = gemini_service.get_pronunciation_url(card.word or "")
-            first = senses[0]
-            await card_repo.update_card(
-                db, card,
-                part_of_speech=first.get("part_of_speech"),
-                translation=first.get("translation", card.translation),
-                example=first.get("example") or card.example,
-                transcription=transcription or card.transcription,
-                pronunciation_url=pronunciation_url or card.pronunciation_url,
-            )
-            updated += 1
-            for sense in senses[1:]:
-                pos = sense.get("part_of_speech")
-                if not pos:
-                    continue
-                if await card_repo.exists_card_in_deck_with_pos(db, deck_id, card.word or "", pos):
-                    continue
-                await card_repo.create_card(
-                    db, deck_id, card.word or "", sense.get("translation", ""),
-                    example=sense.get("example"),
-                    transcription=transcription,
-                    pronunciation_url=pronunciation_url,
-                    part_of_speech=pos,
-                )
-                created += 1
+            batch_results = gemini_service.enrich_words_with_pos_batch(words)
         except Exception:
-            errors += 1
+            errors += len(chunk)
+            continue
+        for card, data in zip(chunk, batch_results):
+            try:
+                senses = data.get("senses") or []
+                if not senses:
+                    skipped += 1
+                    continue
+                transcription = data.get("transcription")
+                pronunciation_url = gemini_service.get_pronunciation_url(card.word or "")
+                first = senses[0]
+                await card_repo.update_card(
+                    db, card,
+                    part_of_speech=first.get("part_of_speech"),
+                    translation=first.get("translation", card.translation),
+                    example=first.get("example") or card.example,
+                    transcription=transcription or card.transcription,
+                    pronunciation_url=pronunciation_url or card.pronunciation_url,
+                )
+                updated += 1
+                for sense in senses[1:]:
+                    pos = sense.get("part_of_speech")
+                    if not pos:
+                        continue
+                    if await card_repo.exists_card_in_deck_with_pos(db, deck_id, card.word or "", pos):
+                        continue
+                    await card_repo.create_card(
+                        db, deck_id, card.word or "", sense.get("translation", ""),
+                        example=sense.get("example"),
+                        transcription=transcription,
+                        pronunciation_url=pronunciation_url,
+                        part_of_speech=pos,
+                    )
+                    created += 1
+            except Exception:
+                errors += 1
     await db.commit()
     return BackfillPosResponse(updated=updated, created=created, skipped=skipped, errors=errors)
 

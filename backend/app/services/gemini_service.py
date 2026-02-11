@@ -239,6 +239,107 @@ def _parse_enrich_response(text: str, word: str) -> dict[str, Any]:
         return {"transcription": None, "senses": []}
 
 
+def _parse_enrich_batch_response(text: str, words: list[str]) -> list[dict[str, Any]]:
+    """Парсинг ответа батч enrich: массив объектов {transcription, senses} в том же порядке, что и words."""
+    result: list[dict[str, Any]] = []
+    # Ищем JSON-массив [...]
+    m = re.search(r"\[\s*\{", text)
+    if not m:
+        # Один объект — считаем ответом для одного слова
+        single = _parse_enrich_response(text, words[0] if words else "")
+        return [single] + [{"transcription": None, "senses": []} for _ in range(len(words) - 1)]
+    try:
+        start = text.index("[")
+        depth = 0
+        end = start
+        for i, c in enumerate(text[start:], start):
+            if c == "[":
+                depth += 1
+            elif c == "]":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        raw = text[start : end + 1]
+        raw = re.sub(r",\s*([}\]])", r"\1", raw)
+        arr = json.loads(raw)
+        for i, item in enumerate(arr):
+            if not isinstance(item, dict):
+                result.append({"transcription": None, "senses": []})
+                continue
+            senses = item.get("senses") or []
+            normalized = []
+            for s in senses:
+                if not isinstance(s, dict):
+                    continue
+                pos = (s.get("part_of_speech") or "").strip().lower()
+                if pos not in ("noun", "verb", "adjective", "adverb"):
+                    continue
+                normalized.append({
+                    "part_of_speech": pos,
+                    "translation": (s.get("translation") or "").strip(),
+                    "example": (s.get("example") or "").strip(),
+                })
+            if not normalized and (item.get("translation") or item.get("example")):
+                normalized = [{
+                    "part_of_speech": "noun",
+                    "translation": (item.get("translation") or "").strip(),
+                    "example": (item.get("example") or "").strip(),
+                }]
+            transcription = (item.get("transcription") or "").strip().strip("[]") or None
+            result.append({"transcription": transcription, "senses": normalized})
+        while len(result) < len(words):
+            result.append({"transcription": None, "senses": []})
+        return result[: len(words)]
+    except (json.JSONDecodeError, ValueError):
+        return [_parse_enrich_response(text, w) if i == 0 else {"transcription": None, "senses": []} for i, w in enumerate(words)]
+
+
+BATCH_ENRICH_SIZE = 10
+
+
+def enrich_words_with_pos_batch(words: list[str]) -> list[dict[str, Any]]:
+    """Обогатить до 10 слов одним запросом: для каждого слово — transcription и senses (части речи). Порядок как у words."""
+    words = [(w or "").strip() for w in words if (w or "").strip()][:BATCH_ENRICH_SIZE]
+    if not words:
+        return []
+    import time
+    now = time.time()
+    # Проверяем кэш: все ли уже есть
+    to_fetch: list[tuple[int, str]] = []
+    result: list[dict[str, Any]] = [{"transcription": None, "senses": []} for _ in words]
+    for i, w in enumerate(words):
+        key = w.lower()
+        if key in _enrich_cache:
+            data, ts = _enrich_cache[key]
+            if now - ts < _ENRICH_CACHE_TTL:
+                result[i] = data
+                continue
+            del _enrich_cache[key]
+        to_fetch.append((i, w))
+    if not to_fetch:
+        return result
+    fetch_words = [w for _, w in to_fetch]
+    word_list = ", ".join(f'"{w}"' for w in fetch_words)
+    prompt = f'''For each English word return one JSON object with "transcription" (IPA) and "senses" (parts of speech). Words: {word_list}.
+senses: array of {{"part_of_speech": "noun|verb|adjective|adverb", "translation": "рус", "example": "short EN sentence"}}. Only applicable POS.
+Output: a single JSON array of {len(fetch_words)} objects, in the same order as the words above. No other text.'''
+    try:
+        text = _generate_content_with_fallback(prompt)
+        batch_results = _parse_enrich_batch_response(text, fetch_words)
+        for (idx, w), data in zip(to_fetch, batch_results):
+            result[idx] = data
+            key = w.lower()
+            if len(_enrich_cache) >= _ENRICH_CACHE_MAX:
+                for k in sorted(_enrich_cache.keys(), key=lambda x: _enrich_cache[x][1])[: _ENRICH_CACHE_MAX // 2]:
+                    del _enrich_cache[k]
+            _enrich_cache[key] = (data, time.time())
+    except Exception:
+        for idx, w in to_fetch:
+            result[idx] = {"transcription": None, "senses": []}
+    return result
+
+
 def enrich_word_with_pos(word: str) -> dict[str, Any]:
     """Все части речи для слова: senses (part_of_speech, translation, example), transcription. С кэшем."""
     w = (word or "").strip()
