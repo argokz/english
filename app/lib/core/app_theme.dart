@@ -26,7 +26,7 @@ class AppTheme {
         ),
       );
 
-  static CardTheme get cardTheme => CardTheme(
+  static CardThemeData get cardTheme => CardThemeData(
         elevation: 1,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusMedium)),
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -35,10 +35,10 @@ class AppTheme {
   static SnackBarThemeData get snackBarTheme => SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusMedium)),
-        margin: const EdgeInsets.all(16),
+        insetPadding: const EdgeInsets.all(16),
       );
 
-  static DialogTheme get dialogTheme => DialogTheme(
+  static DialogThemeData get dialogTheme => DialogThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusLarge)),
         titleTextStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
       );
