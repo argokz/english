@@ -132,9 +132,14 @@ class _StudyScreenState extends State<StudyScreen> {
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount: examples.length,
-                  itemBuilder: (_, i) => ListTile(
-                    title: Text(examples[i], style: const TextStyle(fontSize: 14)),
-                  ),
+                  itemBuilder: (_, i) {
+                    final ex = examples[i];
+                    final sep = ex.indexOf(' — ');
+                    return ListTile(
+                      title: Text(sep >= 0 ? ex.substring(0, sep).trim() : ex, style: const TextStyle(fontSize: 14)),
+                      subtitle: sep >= 0 ? Text(ex.substring(sep + 3).trim(), style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)) : null,
+                    );
+                  },
                 ),
               ),
           ],
@@ -152,21 +157,28 @@ class _StudyScreenState extends State<StudyScreen> {
     
     setState(() => _checkingAnswer = true);
     
-    // Проверка правописания (без учета регистра и лишних пробелов)
-    String correctAnswer;
-    if (currentMode == StudyMode.englishToRussian) {
-      correctAnswer = card.translation.toLowerCase().trim();
-    } else {
-      correctAnswer = card.word.toLowerCase().trim();
-    }
-    
+    // Проверка: при нескольких переводах (через ";") считаем верным совпадение с любым
     final normalizedUserAnswer = userAnswer.toLowerCase().trim();
-    final isCorrect = normalizedUserAnswer == correctAnswer;
-    
-    // Небольшая толерантность: убираем множественные пробелы
-    final normalizedCorrect = correctAnswer.replaceAll(RegExp(r'\s+'), ' ');
     final normalizedUser = normalizedUserAnswer.replaceAll(RegExp(r'\s+'), ' ');
-    final isCorrectTolerant = normalizedUser == normalizedCorrect || normalizedUserAnswer == correctAnswer;
+    bool isCorrectTolerant = false;
+    if (currentMode == StudyMode.englishToRussian) {
+      final parts = card.translation.split(RegExp(r';\s*'));
+      final acceptable = parts.map((s) => s.trim().toLowerCase()).where((s) => s.isNotEmpty).toList();
+      if (acceptable.isEmpty) {
+        acceptable.add(card.translation.toLowerCase().trim());
+      }
+      for (final p in acceptable) {
+        final norm = p.replaceAll(RegExp(r'\s+'), ' ');
+        if (normalizedUser == norm || normalizedUserAnswer == p) {
+          isCorrectTolerant = true;
+          break;
+        }
+      }
+    } else {
+      final correctAnswer = card.word.toLowerCase().trim();
+      final normalizedCorrect = correctAnswer.replaceAll(RegExp(r'\s+'), ' ');
+      isCorrectTolerant = normalizedUser == normalizedCorrect || normalizedUserAnswer == correctAnswer;
+    }
     
     setState(() {
       _isCorrect = isCorrectTolerant;

@@ -416,13 +416,14 @@ Translation:"""
 
 
 def get_examples_for_card(word: str, translation: str, part_of_speech: str | None) -> list[str]:
-    """Сгенерировать 3–5 примеров предложений для слова в данном значении (частое употребление)."""
+    """Сгенерировать 3–5 примеров предложений (EN + перевод на русский) для слова в данном значении."""
     if not (word or "").strip():
         return []
     pos = (part_of_speech or "").strip().lower() or "any"
     prompt = f"""English word "{word.strip()}" (Russian: {translation.strip()}, part of speech: {pos}).
-Give 3 to 5 short example sentences in English where this word is used in this meaning. Common usage only.
-Output: one sentence per line, no numbering, no extra text."""
+Give 3 to 5 short example sentences in English where this word is used in this meaning, and Russian translation for each.
+Format: one line per example — "English sentence — Russian translation" (use em dash between EN and RU).
+Common usage only. No numbering."""
     try:
         text = _generate_content_with_fallback(prompt)
         lines = [s.strip() for s in (text or "").split("\n") if s.strip() and not s.strip()[0].isdigit()]

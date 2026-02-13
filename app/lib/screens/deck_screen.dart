@@ -93,9 +93,14 @@ class _DeckScreenState extends State<DeckScreen> {
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount: examples.length,
-                  itemBuilder: (_, i) => ListTile(
-                    title: Text(examples[i], style: const TextStyle(fontSize: 14)),
-                  ),
+                  itemBuilder: (_, i) {
+                    final ex = examples[i];
+                    final sep = ex.indexOf(' — ');
+                    return ListTile(
+                      title: Text(sep >= 0 ? ex.substring(0, sep).trim() : ex, style: const TextStyle(fontSize: 14)),
+                      subtitle: sep >= 0 ? Text(ex.substring(sep + 3).trim(), style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)) : null,
+                    );
+                  },
                 ),
               ),
           ],
