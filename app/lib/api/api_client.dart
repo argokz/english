@@ -432,12 +432,13 @@ class ApiClient {
     return YouTubeQuestionsResult.fromJson(r.data!);
   }
 
-  Future<IeltsFullExamResponse> generateFullIeltsExam() async {
+  Future<IeltsExamPartResponse> generateIeltsExamPart(int partNum) async {
     final r = await _dio.post<Map<String, dynamic>>(
-      'youtube/exam/generate',
-      options: Options(receiveTimeout: const Duration(minutes: 60)), // Since it processes 4 videos
+      'youtube/exam/generate-part',
+      queryParameters: {'part_num': partNum},
+      options: Options(receiveTimeout: const Duration(minutes: 5)),
     );
-    return IeltsFullExamResponse.fromJson(r.data!);
+    return IeltsExamPartResponse.fromJson(r.data!);
   }
 
   Future<String> askYoutubeQuestion(String videoIdDb, String question) async {

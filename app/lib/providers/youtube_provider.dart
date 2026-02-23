@@ -164,17 +164,27 @@ class YoutubeProvider with ChangeNotifier {
     }
   }
 
+  int _generatingPartNumber = 1;
+  int get generatingPartNumber => _generatingPartNumber;
+
   Future<void> generateFullExam() async {
     _isGeneratingExam = true;
     _examError = null;
+    _fullExam = null;
     notifyListeners();
     await _startBackgroundExecution();
     try {
-      final res = await auth.api.generateFullIeltsExam();
-      _fullExam = res;
+      List<IeltsExamPartResponse> allParts = [];
+      for (int i = 1; i <= 4; i++) {
+        _generatingPartNumber = i;
+        notifyListeners();
+        final partRes = await auth.api.generateIeltsExamPart(i);
+        allParts.add(partRes);
+      }
+      _fullExam = IeltsFullExamResponse(parts: allParts);
     } catch (e) {
       debugPrint('Error generating full exam: $e');
-      _examError = "Failed to generate exam: $e";
+      _examError = "Failed to generate exam:\n$e";
     } finally {
       _isGeneratingExam = false;
       notifyListeners();

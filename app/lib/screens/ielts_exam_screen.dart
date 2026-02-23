@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../providers/youtube_provider.dart';
 import '../api/api_client.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_overlay.dart';
 
 class IeltsExamScreen extends StatefulWidget {
   const IeltsExamScreen({super.key});
@@ -180,69 +182,66 @@ class _IeltsExamScreenState extends State<IeltsExamScreen> {
     final provider = context.watch<YoutubeProvider>();
 
     if (provider.isGeneratingExam) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Генерируем 4 части экзамена...\nЭто может занять 1-2 минуты.', textAlign: TextAlign.center),
-          ],
-        ),
+      return Scaffold(
+        appBar: AppBar(title: const Text('IELTS Simulator')),
+        body: LoadingOverlay(message: 'Генерируем часть ${provider.generatingPartNumber} из 4...\nПожалуйста, подождите.'),
       );
     }
 
     if (provider.examError != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error, color: Colors.red, size: 48),
-            const SizedBox(height: 16),
-            Text('Ошибка: ${provider.examError}', textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => provider.generateFullExam(),
-              child: const Text('Попробовать снова'),
-            ),
-          ],
+      return Scaffold(
+        appBar: AppBar(title: const Text('IELTS Simulator')),
+        body: EmptyState(
+          icon: Icons.error_outline,
+          message: 'Ошибка при генерации экзамена:\n${provider.examError}\n\nПопробуйте ещё раз.',
+          actionLabel: 'Повторить',
+          onAction: () => provider.generateFullExam(),
         ),
       );
     }
 
     if (!_examStarted && provider.fullExam == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.headset, size: 64, color: Colors.blue),
-            const SizedBox(height: 16),
-            const Text(
-              'IELTS Listening Simulator',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Симулятор включает 4 части (40 вопросов).\nДо начала каждой аудиозаписи дается 30 секунд на чтение вопросов.\nАудио проигрывается ровно один раз.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Сгенерировать и начать тест'),
-              onPressed: () => provider.generateFullExam(),
-            ),
-          ],
+      return Scaffold(
+        appBar: AppBar(title: const Text('IELTS Simulator')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.headset, size: 64, color: Colors.blue),
+              const SizedBox(height: 16),
+              const Text(
+                'IELTS Listening Simulator',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  'Симулятор включает 4 части (40 вопросов).\nДо начала каждой аудиозаписи дается 30 секунд на чтение вопросов.\nАудио проигрывается ровно один раз.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Сгенерировать и начать тест'),
+                onPressed: () => provider.generateFullExam(),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     if (!_examStarted && provider.fullExam != null) {
-      return Center(
-        child: FilledButton.icon(
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Начать экзамен'),
-          onPressed: () => _startExam(provider.fullExam!),
+      return Scaffold(
+        appBar: AppBar(title: const Text('IELTS Simulator')),
+        body: Center(
+          child: FilledButton.icon(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Начать экзамен'),
+            onPressed: () => _startExam(provider.fullExam!),
+          ),
         ),
       );
     }
@@ -255,85 +254,96 @@ class _IeltsExamScreenState extends State<IeltsExamScreen> {
       globalIndexOffset += provider.fullExam!.parts[i].questions.length;
     }
 
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.blue.shade50,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Part ${_currentPartIndex + 1} of 4',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              if (_phase == 'pre_reading')
-                Text('Чтение вопросов: $_secondsRemaining сек', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-              if (_phase == 'playing')
-                const Text('Аудио воспроизводится...', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-              if (_phase == 'post_checking')
-                Text('Проверка ответов: $_secondsRemaining сек', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('IELTS Exam'),
+        actions: [
+          TextButton(
+            onPressed: () => _showResults(provider.fullExam!),
+            child: const Text('Завершить', style: TextStyle(color: Colors.white)),
           ),
-        ),
-        
-        // Hidden Youtube Player to play the audio
-        if (_playerController != null)
-          SizedBox(
-            height: 1, // practically hidden
-            child: YoutubePlayer(
-              controller: _playerController!,
-              showVideoProgressIndicator: false,
+        ],
+      ),
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.blue.shade50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Part ${_currentPartIndex + 1} of 4',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                if (_phase == 'pre_reading')
+                  Text('Чтение вопросов: $_secondsRemaining сек', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                if (_phase == 'playing')
+                  const Text('Аудио воспроизводится...', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                if (_phase == 'post_checking')
+                  Text('Проверка ответов: $_secondsRemaining сек', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+              ],
             ),
           ),
           
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: currentPart.questions.length,
-            itemBuilder: (context, index) {
-              final q = currentPart.questions[index];
-              final globalIndex = globalIndexOffset + index;
-              
-              return Card(
-                margin: const EdgeInsets.only(bottom: 16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${globalIndex + 1}. ${q.question}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                      const SizedBox(height: 12),
-                      if (q.type == 'multiple_choice' && q.options.isNotEmpty)
-                        ...q.options.map((opt) => RadioListTile<String>(
-                          title: Text(opt),
-                          value: opt,
-                          groupValue: _userAnswers[globalIndex],
-                          onChanged: (val) {
-                            setState(() {
-                              _userAnswers[globalIndex] = val!;
-                            });
-                          },
-                        )),
-                      if (q.type == 'completion' || q.type == 'matching' || q.options.isEmpty)
-                        TextField(
-                          decoration: const InputDecoration(
-                            hintText: 'Ваш ответ...',
-                            border: OutlineInputBorder(),
-                            isDense: true,
+          // Hidden Youtube Player to play the audio
+          if (_playerController != null)
+            SizedBox(
+              height: 1, // practically hidden
+              child: YoutubePlayer(
+                controller: _playerController!,
+                showVideoProgressIndicator: false,
+              ),
+            ),
+            
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: currentPart.questions.length,
+              itemBuilder: (context, index) {
+                final q = currentPart.questions[index];
+                final globalIndex = globalIndexOffset + index;
+                
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${globalIndex + 1}. ${q.question}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                        const SizedBox(height: 12),
+                        if (q.type == 'multiple_choice' && q.options.isNotEmpty)
+                          ...q.options.map((opt) => RadioListTile<String>(
+                            title: Text(opt),
+                            value: opt,
+                            groupValue: _userAnswers[globalIndex],
+                            onChanged: (val) {
+                              setState(() {
+                                _userAnswers[globalIndex] = val!;
+                              });
+                            },
+                          )),
+                        if (q.type == 'completion' || q.type == 'matching' || q.options.isEmpty)
+                          TextField(
+                            decoration: const InputDecoration(
+                              hintText: 'Ваш ответ...',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: (val) {
+                              _userAnswers[globalIndex] = val;
+                            },
                           ),
-                          onChanged: (val) {
-                            _userAnswers[globalIndex] = val;
-                          },
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
