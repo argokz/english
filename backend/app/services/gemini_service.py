@@ -647,9 +647,12 @@ def generate_ielts_listening_questions(transcript: str) -> dict:
     Generate IELTS Listening comprehension questions based on a transcript.
     """
     if not transcript or not transcript.strip():
-        return {"questions": []}
+        return {"questions": [], "gap_fill_questions": []}
         
-    prompt = f"""You are an IELTS Listening examiner. Based on the following transcript, generate 3 to 5 IELTS-style listening comprehension multiple-choice questions. 
+    prompt = f"""You are an IELTS Listening examiner. Based on the following transcript:
+1. Generate 3 to 5 IELTS-style listening comprehension multiple-choice questions. 
+2. Generate 3 to 5 "fill in the gaps" sentences using exact words or short phrases from the text. Replace the target word/phrase with a blank (use exactly ___ as the placeholder, e.g., "The weather is often ___ in winter.").
+
 Respond ONLY in JSON format covering exactly this structure:
 {{
   "questions": [
@@ -658,6 +661,13 @@ Respond ONLY in JSON format covering exactly this structure:
       "options": ["Option 1", "Option 2", "Option 3"],
       "correct_answer": "Option 1",
       "explanation": "Brief explanation of why this is correct based on the text"
+    }}
+  ],
+  "gap_fill_questions": [
+    {{
+      "sentence": "Sentence with exactly one ___ representing the missing word/phrase",
+      "answer": "The missing word or phrase",
+      "explanation": "Brief context explanation"
     }}
   ]
 }}
@@ -678,4 +688,56 @@ TRANSCRIPT:
         return data
     except Exception as e:
         logger.error(f"Failed to generate IELTS questions: {e}")
+        return {"questions": []}
+
+def generate_ielts_exam_part(transcript: str, part_number: int) -> dict:
+    """
+    Generate exactly 10 IELTS Listening questions tailored to a specific part.
+    """
+    if not transcript or not transcript.strip():
+        return {"questions": []}
+        
+    part_instructions = {
+        1: "Part 1: Social Interaction (Dialog). Focus on Form Completion. Questions should require specific facts like names (spelled out), phone numbers, dates, places, or short answers. Generate 10 'completion' style questions representing an intake form or notes.",
+        2: "Part 2: Social Context (Monolog). Focus on Multiple Choice (3 options) and Matching. Generate 10 questions that mix multiple choice and matching.",
+        3: "Part 3: Educational Discussion (Group Dialog 2-4 people). Focus on Multiple Choice (longer options), Matching opinions to speakers, and Sentence Completion. Generate 10 questions.",
+        4: "Part 4: Academic Lecture (Monolog). Focus on Note/Summary Completion. Generate 10 'completion' style questions that represent a summary of the lecture."
+    }
+    
+    instruction = part_instructions.get(part_number, part_instructions[1])
+    
+    prompt = f"""You are an IELTS Listening examiner. Based on the following transcript, generate exactly 10 IELTS-style listening comprehension questions for Part {part_number}.
+INSTRUCTION FOR THIS PART:
+{instruction}
+
+Respond ONLY in JSON format covering exactly this structure:
+{{
+  "questions": [
+    {{
+      "type": "multiple_choice", // OR "completion" OR "matching"
+      "question": "Question text or sentence with exactly one ___ representing the missing word/phrase",
+      "options": ["Option A", "Option B", "Option C"], // ONLY if type is multiple_choice or matching. Empty otherwise.
+      "answer": "The correct option or the exact missing word/phrase",
+      "explanation": "Brief context explanation"
+    }}
+  ]
+}}
+Ensure there are EXACTLY 10 questions in the array. For "completion" type, the 'answer' must be NO MORE THAN TWO WORDS and exactly match the audio words.
+
+TRANSCRIPT:
+---
+{transcript.strip()}
+---
+"""
+    try:
+        raw = _generate_content_with_fallback(prompt)
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+        if raw.endswith("```"):
+            raw = raw.rsplit("```", 1)[0]
+        raw = raw.strip()
+        data = json.loads(raw)
+        return {"questions": data.get("questions", [])}
+    except Exception as e:
+        logger.error(f"Failed to generate IELTS exam part {part_number} questions: {e}")
         return {"questions": []}

@@ -403,7 +403,7 @@ class ApiClient {
         if (url != null && url.isNotEmpty) 'url': url else 'url': '',
         'target_lang': targetLang,
       },
-      options: Options(receiveTimeout: const Duration(minutes: 5)),
+      options: Options(receiveTimeout: const Duration(minutes: 30)),
     );
     return YouTubeProcessResult.fromJson(r.data!);
   }
@@ -416,12 +416,28 @@ class ApiClient {
     return (r.data ?? []).map((e) => YouTubeHistoryItem.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<List<YouTubeSearchResult>> searchYoutube(String query, {int limit = 20}) async {
+    final r = await _dio.get<List>(
+      'youtube/search',
+      queryParameters: {'query': query, 'limit': limit},
+    );
+    return (r.data ?? []).map((e) => YouTubeSearchResult.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   Future<YouTubeQuestionsResult> generateYoutubeQuestions(String videoIdDb) async {
     final r = await _dio.post<Map<String, dynamic>>(
       'youtube/$videoIdDb/questions',
-      options: Options(receiveTimeout: _kLongRequestTimeout),
+      options: Options(receiveTimeout: const Duration(minutes: 30)),
     );
     return YouTubeQuestionsResult.fromJson(r.data!);
+  }
+
+  Future<IeltsFullExamResponse> generateFullIeltsExam() async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'youtube/exam/generate',
+      options: Options(receiveTimeout: const Duration(minutes: 60)), // Since it processes 4 videos
+    );
+    return IeltsFullExamResponse.fromJson(r.data!);
   }
 
   Future<String> askYoutubeQuestion(String videoIdDb, String question) async {
@@ -458,6 +474,32 @@ class YouTubeProcessResult {
       transcription: json['transcription'] as String? ?? '',
       translation: json['translation'] as String? ?? '',
       summary: json['summary'] as String? ?? '',
+    );
+  }
+}
+
+class YouTubeSearchResult {
+  final String videoId;
+  final String url;
+  final String? title;
+  final num? duration;
+  final List<dynamic>? thumbnails;
+
+  YouTubeSearchResult({
+    required this.videoId,
+    required this.url,
+    this.title,
+    this.duration,
+    this.thumbnails,
+  });
+
+  factory YouTubeSearchResult.fromJson(Map<String, dynamic> json) {
+    return YouTubeSearchResult(
+      videoId: json['video_id'] as String,
+      url: json['url'] as String,
+      title: json['title'] as String?,
+      duration: json['duration'] as num?,
+      thumbnails: json['thumbnails'] as List<dynamic>?,
     );
   }
 }
@@ -511,15 +553,38 @@ class YouTubeQuestion {
   }
 }
 
+class YouTubeGapQuestion {
+  final String sentence;
+  final String answer;
+  final String explanation;
+
+  YouTubeGapQuestion({
+    required this.sentence,
+    required this.answer,
+    required this.explanation,
+  });
+
+  factory YouTubeGapQuestion.fromJson(Map<String, dynamic> json) {
+    return YouTubeGapQuestion(
+      sentence: json['sentence'] as String? ?? '',
+      answer: json['answer'] as String? ?? '',
+      explanation: json['explanation'] as String? ?? '',
+    );
+  }
+}
+
 class YouTubeQuestionsResult {
   final List<YouTubeQuestion> questions;
+  final List<YouTubeGapQuestion> gapFillQuestions;
 
-  YouTubeQuestionsResult({required this.questions});
+  YouTubeQuestionsResult({required this.questions, required this.gapFillQuestions});
 
   factory YouTubeQuestionsResult.fromJson(Map<String, dynamic> json) {
     final list = json['questions'] as List? ?? [];
+    final gapList = json['gap_fill_questions'] as List? ?? [];
     return YouTubeQuestionsResult(
       questions: list.map((e) => YouTubeQuestion.fromJson(e as Map<String, dynamic>)).toList(),
+      gapFillQuestions: gapList.map((e) => YouTubeGapQuestion.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 }
@@ -673,6 +738,76 @@ class WritingSubmissionDetail {
       errors: errorsList.map((e) => WritingErrorItem.fromJson(e as Map<String, dynamic>)).toList(),
       recommendations: json['recommendations'] as String? ?? '',
       createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+}
+
+class IeltsExamQuestion {
+  final String type;
+  final String question;
+  final List<String> options;
+  final String answer;
+  final String explanation;
+
+  IeltsExamQuestion({
+    required this.type,
+    required this.question,
+    required this.options,
+    required this.answer,
+    required this.explanation,
+  });
+
+  factory IeltsExamQuestion.fromJson(Map<String, dynamic> json) {
+    return IeltsExamQuestion(
+      type: json['type'] as String? ?? 'completion',
+      question: json['question'] as String? ?? '',
+      options: (json['options'] as List?)?.map((e) => e as String).toList() ?? [],
+      answer: json['answer'] as String? ?? '',
+      explanation: json['explanation'] as String? ?? '',
+    );
+  }
+}
+
+class IeltsExamPartResponse {
+  final int partNumber;
+  final String videoId;
+  final String url;
+  final String transcription;
+  final List<IeltsExamQuestion> questions;
+
+  IeltsExamPartResponse({
+    required this.partNumber,
+    required this.videoId,
+    required this.url,
+    required this.transcription,
+    required this.questions,
+  });
+
+  factory IeltsExamPartResponse.fromJson(Map<String, dynamic> json) {
+    return IeltsExamPartResponse(
+      partNumber: json['part_number'] as int? ?? 1,
+      videoId: json['video_id'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      transcription: json['transcription'] as String? ?? '',
+      questions: (json['questions'] as List?)
+              ?.map((e) => IeltsExamQuestion.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class IeltsFullExamResponse {
+  final List<IeltsExamPartResponse> parts;
+
+  IeltsFullExamResponse({required this.parts});
+
+  factory IeltsFullExamResponse.fromJson(Map<String, dynamic> json) {
+    return IeltsFullExamResponse(
+      parts: (json['parts'] as List?)
+              ?.map((e) => IeltsExamPartResponse.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
   }
 }

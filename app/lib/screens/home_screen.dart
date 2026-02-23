@@ -170,6 +170,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => context.push('/listening'),
               ),
             ),
+            Card(
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                leading: CircleAvatar(
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  child: Icon(Icons.school, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                ),
+                title: const Text('IELTS Экзамен (Симулятор)'),
+                subtitle: const Text('Сгенерировать и пройти реальный тест из 4 частей'),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () => context.push('/exam'),
+              ),
+            ),
             ...List.generate(decks.length, (i) {
               final d = decks[i];
             final due = _dueCounts?[d.id] ?? 0;

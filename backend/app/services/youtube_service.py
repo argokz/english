@@ -96,3 +96,42 @@ async def search_ielts_video() -> dict:
     except Exception as e:
         logger.error(f"Error searching for IELTS video: {e}")
         raise ValueError(f"Could not search for a video: {str(e)}")
+
+async def search_youtube_videos(query: str, limit: int = 20) -> list[dict]:
+    """
+    Searches for YouTube videos based on a generic query and returns a list.
+    """
+    logger.info(f"Searching for YouTube videos with query: {query}, limit: {limit}")
+    
+    query_str = f"ytsearch{limit}:{query}"
+    
+    ydl_opts = {
+        'extract_flat': True,
+        'quiet': True,
+    }
+
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        
+        def _search():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(query_str, download=False)
+                results = []
+                if 'entries' in info and len(info['entries']) > 0:
+                    for video in info['entries']:
+                        results.append({
+                            "video_id": video.get("id"),
+                            "url": video.get("url") or f"https://www.youtube.com/watch?v={video.get('id')}",
+                            "title": video.get("title"),
+                            "duration": video.get("duration"),
+                            "thumbnails": video.get("thumbnails", [])
+                        })
+                return results
+
+        results = await loop.run_in_executor(None, _search)
+        logger.info(f"Found {len(results)} videos for query: {query}")
+        return results
+    except Exception as e:
+        logger.error(f"Error searching for videos: {e}")
+        raise ValueError(f"Could not search for videos: {str(e)}")
