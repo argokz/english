@@ -392,6 +392,9 @@ class ApiClient {
       },
       options: Options(receiveTimeout: _kLongRequestTimeout),
     );
+    return EvaluateWritingResult.fromJson(r.data!);
+  }
+
   /// YouTube endpoints
   Future<YouTubeProcessResult> processYoutubeVideo({String? url, String targetLang = 'ru'}) async {
     final r = await _dio.post<Map<String, dynamic>>(
