@@ -3,19 +3,28 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:app_links/app_links.dart';
 import 'core/app_theme.dart';
+import 'providers/youtube_provider.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/ielts_writing_screen.dart';
 import 'screens/translator_screen.dart';
+import 'screens/ielts_listening_screen.dart';
 
 void main() {
   final authProvider = AuthProvider();
-  runApp(ChangeNotifierProvider<AuthProvider>.value(
-    value: authProvider,
-    child: EnglishWordsApp(authProvider: authProvider),
-  ));
+  final youtubeProvider = YoutubeProvider(authProvider);
+  
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+        ChangeNotifierProvider<YoutubeProvider>.value(value: youtubeProvider),
+      ],
+      child: EnglishWordsApp(authProvider: authProvider),
+    )
+  );
 }
 
 class EnglishWordsApp extends StatefulWidget {
@@ -90,6 +99,7 @@ class _EnglishWordsAppState extends State<EnglishWordsApp> {
           routes: [
             GoRoute(path: 'settings', builder: (_, __) => const SettingsScreen()),
             GoRoute(path: 'writing', builder: (_, __) => const IeltsWritingScreen()),
+            GoRoute(path: 'listening', builder: (_, __) => const IeltsListeningScreen()),
             GoRoute(path: 'translator', builder: (_, __) => const TranslatorScreen()),
           ],
         ),

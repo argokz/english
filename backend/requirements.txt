@@ -16,3 +16,4 @@ fsrs>=6.0.0
 pgvector==0.3.6
 psycopg2-binary==2.9.10
 itsdangerous>=2.0.0
+yt-dlp>=2024.11.04

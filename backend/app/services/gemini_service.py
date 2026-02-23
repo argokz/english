@@ -593,3 +593,89 @@ def get_embedding(text: str) -> list[float] | None:
     except Exception:
         pass
     return None
+
+def summarize_youtube_video(transcript: str, target_lang: str = "ru") -> dict:
+    """
+    Summarize a YouTube video transcript.
+    Returns a dict with 'translation' and 'summary'.
+    """
+    if not transcript or not transcript.strip():
+        return {"translation": "", "summary": ""}
+        
+    lang = "Russian" if target_lang.strip().lower() == "ru" else "English"
+    
+    prompt = f"""You are an expert at summarizing and translating content.
+Below is the transcript of a YouTube video.
+1. Translate the entire text into {lang} if it's not already.
+2. Provide a concise bulleted summary of the main points in {lang}.
+
+Respond ONLY in JSON format with exactly this structure:
+{{
+  "translation": "[Full translation of the transcript into {lang}]",
+  "summary": "[Bullet points summarizing the main ideas in {lang}]"
+}}
+
+TRANSCRIPT:
+---
+{transcript.strip()}
+---
+"""
+    try:
+        raw = _generate_content_with_fallback(prompt)
+        # Parse output as JSON
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+        if raw.endswith("```"):
+            raw = raw.rsplit("```", 1)[0]
+        raw = raw.strip()
+        data = json.loads(raw)
+        return {
+            "translation": data.get("translation", ""),
+            "summary": data.get("summary", "")
+        }
+    except Exception as e:
+        logger.error(f"Failed to summarize YouTube transcript: {e}")
+        # Return fallback values
+        return {
+            "translation": "Translation failed. See raw transcription.",
+            "summary": "Summary generation failed."
+        }
+
+
+def generate_ielts_listening_questions(transcript: str) -> dict:
+    """
+    Generate IELTS Listening comprehension questions based on a transcript.
+    """
+    if not transcript or not transcript.strip():
+        return {"questions": []}
+        
+    prompt = f"""You are an IELTS Listening examiner. Based on the following transcript, generate 3 to 5 IELTS-style listening comprehension multiple-choice questions. 
+Respond ONLY in JSON format covering exactly this structure:
+{{
+  "questions": [
+    {{
+      "question": "Question text",
+      "options": ["Option 1", "Option 2", "Option 3"],
+      "correct_answer": "Option 1",
+      "explanation": "Brief explanation of why this is correct based on the text"
+    }}
+  ]
+}}
+
+TRANSCRIPT:
+---
+{transcript.strip()}
+---
+"""
+    try:
+        raw = _generate_content_with_fallback(prompt)
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+        if raw.endswith("```"):
+            raw = raw.rsplit("```", 1)[0]
+        raw = raw.strip()
+        data = json.loads(raw)
+        return data
+    except Exception as e:
+        logger.error(f"Failed to generate IELTS questions: {e}")
+        return {"questions": []}

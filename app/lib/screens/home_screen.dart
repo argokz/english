@@ -157,6 +157,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => context.push('/writing'),
               ),
             ),
+            Card(
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                leading: CircleAvatar(
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  child: Icon(Icons.headphones, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                ),
+                title: const Text('IELTS Listening'),
+                subtitle: const Text('Слушайте YouTube, читайте транскрипцию и отвечайте на вопросы'),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () => context.push('/listening'),
+              ),
+            ),
             ...List.generate(decks.length, (i) {
               final d = decks[i];
             final due = _dueCounts?[d.id] ?? 0;

@@ -392,7 +392,132 @@ class ApiClient {
       },
       options: Options(receiveTimeout: _kLongRequestTimeout),
     );
-    return EvaluateWritingResult.fromJson(r.data!);
+  /// YouTube endpoints
+  Future<YouTubeProcessResult> processYoutubeVideo({String? url, String targetLang = 'ru'}) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'youtube/process',
+      data: {
+        if (url != null && url.isNotEmpty) 'url': url else 'url': '',
+        'target_lang': targetLang,
+      },
+      options: Options(receiveTimeout: const Duration(minutes: 5)),
+    );
+    return YouTubeProcessResult.fromJson(r.data!);
+  }
+
+  Future<List<YouTubeHistoryItem>> getYoutubeHistory({int limit = 50, int offset = 0}) async {
+    final r = await _dio.get<List>(
+      'youtube/history',
+      queryParameters: {'limit': limit, 'offset': offset},
+    );
+    return (r.data ?? []).map((e) => YouTubeHistoryItem.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<YouTubeQuestionsResult> generateYoutubeQuestions(String videoIdDb) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'youtube/$videoIdDb/questions',
+      options: Options(receiveTimeout: _kLongRequestTimeout),
+    );
+    return YouTubeQuestionsResult.fromJson(r.data!);
+  }
+
+  Future<String> askYoutubeQuestion(String videoIdDb, String question) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      'youtube/$videoIdDb/ask',
+      data: {'question': question},
+    );
+    return r.data!['answer'] as String? ?? '';
+  }
+}
+
+class YouTubeProcessResult {
+  final String id;
+  final String videoId;
+  final String url;
+  final String transcription;
+  final String translation;
+  final String summary;
+
+  YouTubeProcessResult({
+    required this.id,
+    required this.videoId,
+    required this.url,
+    required this.transcription,
+    required this.translation,
+    required this.summary,
+  });
+
+  factory YouTubeProcessResult.fromJson(Map<String, dynamic> json) {
+    return YouTubeProcessResult(
+      id: json['id'] as String,
+      videoId: json['video_id'] as String,
+      url: json['url'] as String,
+      transcription: json['transcription'] as String? ?? '',
+      translation: json['translation'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+    );
+  }
+}
+
+class YouTubeHistoryItem {
+  final String id;
+  final String videoId;
+  final String url;
+  final String transcription;
+  final DateTime viewedAt;
+
+  YouTubeHistoryItem({
+    required this.id,
+    required this.videoId,
+    required this.url,
+    required this.transcription,
+    required this.viewedAt,
+  });
+
+  factory YouTubeHistoryItem.fromJson(Map<String, dynamic> json) {
+    return YouTubeHistoryItem(
+      id: json['id'] as String,
+      videoId: json['video_id'] as String,
+      url: json['url'] as String,
+      transcription: json['transcription'] as String? ?? '',
+      viewedAt: DateTime.parse(json['viewed_at'] as String),
+    );
+  }
+}
+
+class YouTubeQuestion {
+  final String question;
+  final List<String> options;
+  final String correctAnswer;
+  final String explanation;
+
+  YouTubeQuestion({
+    required this.question,
+    required this.options,
+    required this.correctAnswer,
+    required this.explanation,
+  });
+
+  factory YouTubeQuestion.fromJson(Map<String, dynamic> json) {
+    return YouTubeQuestion(
+      question: json['question'] as String? ?? '',
+      options: List<String>.from(json['options'] as List? ?? []),
+      correctAnswer: json['correct_answer'] as String? ?? '',
+      explanation: json['explanation'] as String? ?? '',
+    );
+  }
+}
+
+class YouTubeQuestionsResult {
+  final List<YouTubeQuestion> questions;
+
+  YouTubeQuestionsResult({required this.questions});
+
+  factory YouTubeQuestionsResult.fromJson(Map<String, dynamic> json) {
+    final list = json['questions'] as List? ?? [];
+    return YouTubeQuestionsResult(
+      questions: list.map((e) => YouTubeQuestion.fromJson(e as Map<String, dynamic>)).toList(),
+    );
   }
 }
 

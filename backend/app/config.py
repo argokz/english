@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     log_sql: bool = False  # Логировать SQL запросы
     # API
     root_path: str = ""  # Префикс для всех роутов (например, "/english-words")
+    # Whisper Worker
+    whisper_worker_url: str = "http://100.115.128.128:8004"
 
     class Config:
         env_file = ".env"
@@ -56,3 +58,5 @@ if os.getenv("REDIRECT_URI"):
     settings.redirect_uri = os.getenv("REDIRECT_URI")
 if os.getenv("ROOT_PATH"):
     settings.root_path = os.getenv("ROOT_PATH")
+if os.getenv("WHISPER_WORKER_URL"):
+    settings.whisper_worker_url = os.getenv("WHISPER_WORKER_URL")

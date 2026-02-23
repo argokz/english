@@ -18,3 +18,5 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     decks = relationship("Deck", back_populates="user", cascade="all, delete-orphan")
+    writing_submissions = relationship("WritingSubmission", back_populates="user", cascade="all, delete-orphan")
+    youtube_history = relationship("UserYouTubeVideo", back_populates="user", cascade="all, delete-orphan")
