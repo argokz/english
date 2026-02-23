@@ -1,17 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from pydantic import BaseModel
 import os
 import logging
+import re
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services import youtube_service, transcription_service, gemini_service
 from app.db.repositories import youtube_repo
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +104,15 @@ async def process_youtube_video(
         summary_text = summary_result.get("summary", "")
 
         # Step 6: Save to DB and User History
-        new_video = await youtube_repo.create_video(db, video_id, url_to_process, full_transcript, translation_text, summary_text)
+        try:
+            new_video = await youtube_repo.create_video(db, video_id, url_to_process, full_transcript, translation_text, summary_text)
+        except IntegrityError:
+            # Race condition: someone else saved it while we were transcribing
+            await db.rollback()
+            new_video = await youtube_repo.get_video_by_youtube_id(db, video_id)
+            if not new_video:
+                raise HTTPException(status_code=500, detail="Conflict during video creation and could not retrieve existing video.")
+        
         await youtube_repo.add_to_user_history(db, current_user.id, new_video.id)
         await db.commit()
 
