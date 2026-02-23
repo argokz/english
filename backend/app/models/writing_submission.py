@@ -25,4 +25,4 @@ class WritingSubmission(Base):
     recommendations: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    user = relationship("User", backref="writing_submissions")
+    user = relationship("User", back_populates="writing_submissions")
