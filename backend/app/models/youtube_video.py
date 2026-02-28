@@ -17,3 +17,4 @@ class YouTubeVideo(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user_histories = relationship("UserYouTubeVideo", back_populates="video", cascade="all, delete-orphan")
+    exam_parts = relationship("IeltsExamPart", back_populates="video", cascade="all, delete-orphan")

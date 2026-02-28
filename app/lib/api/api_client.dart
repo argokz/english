@@ -509,6 +509,7 @@ class YouTubeHistoryItem {
   final String id;
   final String videoId;
   final String url;
+  final String? title;
   final String transcription;
   final DateTime viewedAt;
 
@@ -516,6 +517,7 @@ class YouTubeHistoryItem {
     required this.id,
     required this.videoId,
     required this.url,
+    this.title,
     required this.transcription,
     required this.viewedAt,
   });
@@ -525,6 +527,7 @@ class YouTubeHistoryItem {
       id: json['id'] as String,
       videoId: json['video_id'] as String,
       url: json['url'] as String,
+      title: json['title'] as String?,
       transcription: json['transcription'] as String? ?? '',
       viewedAt: DateTime.parse(json['viewed_at'] as String),
     );

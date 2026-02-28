@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import os
 import logging
 import re
+import random
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -182,12 +183,16 @@ async def get_youtube_history(
         results = []
         for h in history:
             vid = h.video
+            # Return only a short preview of transcription to keep payload small.
+            # Full transcription is loaded when the user actually selects the video.
+            transcription_preview = (vid.transcription or "")[:200]
             results.append({
                 "id": vid.id,
                 "video_id": vid.video_id,
                 "url": vid.url,
-                "transcription": vid.transcription,
-                "viewed_at": h.viewed_at
+                "title": vid.title if hasattr(vid, "title") else None,
+                "transcription": transcription_preview,
+                "viewed_at": h.viewed_at,
             })
         return results
     except Exception as e:
@@ -292,3 +297,139 @@ async def generate_full_exam(
     except Exception as e:
         logger.exception("Failed to generate full IELTS Exam")
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+@router.post("/exam/generate-part", response_model=IeltsExamPartResponse)
+async def generate_exam_part(
+    part_num: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Step 0: Try to get a random part from the bank first (immediate response)
+    bank_part = await youtube_repo.get_random_exam_part(db, part_num)
+    if bank_part:
+        logger.info(f"Returning random Exam Part {part_num} from bank: {bank_part.id}")
+        return IeltsExamPartResponse(
+            part_number=part_num,
+            video_id=bank_part.video.video_id,
+            url=bank_part.video.url,
+            transcription=bank_part.video.transcription,
+            questions=[
+                IeltsExamQuestion(**q) for q in bank_part.questions
+            ]
+        )
+
+    # Fallback to generation if bank is empty
+    logger.info(f"Exam Bank is empty for Part {part_num}. Falling back to generation...")
+    query = f"ielts listening practice test part {part_num} short"
+    
+    try:
+        # 1. Search for video
+        search_results = await youtube_service.search_youtube_videos(query, limit=5)
+        if not search_results:
+            raise ValueError(f"No videos found for Part {part_num}")
+        
+        # Use the first valid result
+        selected_video = search_results[0]
+        y_video_id = selected_video["video_id"]
+        url = selected_video["url"]
+        
+        # Check if already transcribed
+        db_video = await youtube_repo.get_video_by_youtube_id(db, y_video_id)
+        if db_video:
+            logger.info(f"Video {y_video_id} already transcribed. Reusing.")
+            transcript = db_video.transcription
+        else:
+            # 2. Download audio
+            audio_path = await youtube_service.download_youtube_audio(url)
+            background_tasks.add_task(cleanup_file, audio_path)
+            
+            # 3. Transcribe audio
+            transcription_result = await transcription_service.transcribe_audio_file(audio_path, language="en")
+            segments = transcription_result.get("segments", [])
+            transcript = " ".join([segment.get("text", "") for segment in segments])
+            
+            # Save the video basics (without translation/summary for now as it's an exam part)
+            try:
+                db_video = await youtube_repo.create_video(db, y_video_id, url, transcript, "", "")
+            except IntegrityError:
+                await db.rollback()
+                db_video = await youtube_repo.get_video_by_youtube_id(db, y_video_id)
+
+        # 4. Generate questions via LLM
+        questions_payload = gemini_service.generate_ielts_exam_part(transcript, part_num)
+        raw_questions = questions_payload.get("questions", [])
+        
+        # 5. Save to Bank
+        new_bank_part = await youtube_repo.create_exam_part(db, db_video.id, part_num, raw_questions)
+        await db.commit()
+
+        return IeltsExamPartResponse(
+            part_number=part_num,
+            video_id=y_video_id,
+            url=url,
+            transcription=transcript,
+            questions=[IeltsExamQuestion(**q) for q in raw_questions]
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to generate IELTS Exam Part {part_num}")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+@router.post("/exam/bank/seed")
+async def seed_exam_bank(
+    count: int = 5,
+    background_tasks: BackgroundTasks = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers background generation of multiple exam parts for each category (1-4).
+    """
+    logger.info(f"Seeding Exam Bank with {count} variants per part...")
+    
+    async def _seed_task():
+        for part_num in range(1, 5):
+            for i in range(count):
+                try:
+                    query = f"ielts listening practice test part {part_num} short"
+                    search_results = await youtube_service.search_youtube_videos(query, limit=10)
+                    # Pick a random one from search results to avoid always picking the same
+                    selected_video = random.choice(search_results)
+                    y_video_id = selected_video["video_id"]
+                    url = selected_video["url"]
+                    
+                    # Check if already in bank
+                    existing_video = await youtube_repo.get_video_by_youtube_id(db, y_video_id)
+                    if existing_video:
+                        existing_part = await youtube_repo.get_exam_part_by_video_id(db, existing_video.id, part_num)
+                        if existing_part:
+                            continue
+
+                    # Process: Download, Transcribe, Generate
+                    audio_path = await youtube_service.download_youtube_audio(url)
+                    transcription_result = await transcription_service.transcribe_audio_file(audio_path, language="en")
+                    if os.path.exists(audio_path):
+                        os.remove(audio_path)
+                    
+                    transcript = " ".join([s.get("text", "") for s in transcription_result.get("segments", [])])
+                    
+                    db_video = await youtube_repo.get_video_by_youtube_id(db, y_video_id)
+                    if not db_video:
+                        db_video = await youtube_repo.create_video(db, y_video_id, url, transcript, "", "")
+                    
+                    questions_payload = gemini_service.generate_ielts_exam_part(transcript, part_num)
+                    await youtube_repo.create_exam_part(db, db_video.id, part_num, questions_payload.get("questions", []))
+                    await db.commit()
+                    logger.info(f"Successfully seeded Part {part_num} variant {i+1}")
+                except Exception as e:
+                    logger.error(f"Error seeding Exam Bank variant: {e}")
+                    await db.rollback()
+
+    if background_tasks:
+        background_tasks.add_task(_seed_task)
+    else:
+        # Fallback if needed, though FastAPI provides it
+        import asyncio
+        asyncio.create_task(_seed_task())
+        
+    return {"message": f"Seeding started for {count} variants per part in background."}
