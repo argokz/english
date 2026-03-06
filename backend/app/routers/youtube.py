@@ -183,15 +183,13 @@ async def get_youtube_history(
         results = []
         for h in history:
             vid = h.video
-            # Return only a short preview of transcription to keep payload small.
-            # Full transcription is loaded when the user actually selects the video.
-            transcription_preview = (vid.transcription or "")[:200]
             results.append({
                 "id": vid.id,
                 "video_id": vid.video_id,
                 "url": vid.url,
                 "title": vid.title if hasattr(vid, "title") else None,
-                "transcription": transcription_preview,
+                "transcription": vid.transcription,
+                "translation": vid.translation,
                 "viewed_at": h.viewed_at,
             })
         return results

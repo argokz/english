@@ -136,6 +136,65 @@ async def google_token(
     )
 
 
+@router.get("/google/desktop")
+async def google_login_desktop(request: Request):
+    """Redirect user to Google OAuth2, returns token to english-desktop:// deep link (Tauri)."""
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
+    desktop_redirect_uri = str(request.base_url).rstrip("/") + "/auth/google/callback/desktop"
+    client = AsyncOAuth2Client(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        redirect_uri=desktop_redirect_uri,
+        scope="openid email profile",
+    )
+    uri, state = client.create_authorization_url(GOOGLE_AUTH_URL, redirect_uri=desktop_redirect_uri)
+    request.session["oauth_state_desktop"] = state
+    return RedirectResponse(url=uri)
+
+
+@router.get("/google/callback/desktop")
+async def google_callback_desktop(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchanges code for token, returns JWT to the Tauri deep link english-desktop://auth."""
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
+    desktop_redirect_uri = str(request.base_url).rstrip("/") + "/auth/google/callback/desktop"
+    client = AsyncOAuth2Client(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        redirect_uri=desktop_redirect_uri,
+    )
+    token = await client.fetch_token(
+        GOOGLE_TOKEN_URL,
+        authorization_response=str(request.url),
+        redirect_uri=desktop_redirect_uri,
+    )
+    if not token or "access_token" not in token:
+        raise HTTPException(status_code=400, detail="Failed to get token from Google")
+    user_info = await _get_google_user_info(token["access_token"])
+    google_id = user_info.get("sub")
+    email = user_info.get("email") or ""
+    name = user_info.get("name")
+    picture_url = user_info.get("picture")
+    if not google_id or not email:
+        raise HTTPException(status_code=400, detail="Missing user info from Google")
+    user = await get_user_by_google_id(db, google_id)
+    if not user:
+        user = await create_user(db, email=email, google_id=google_id, name=name, picture_url=picture_url)
+    await db.commit()
+    access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    # Redirect to Tauri custom protocol deep link
+    deep_link = f"english-desktop://auth#access_token={access_token}&email={email}"
+    return RedirectResponse(url=deep_link)
+
+
 @router.get("/google/callback/json")
 async def google_callback_json(
     request: Request,

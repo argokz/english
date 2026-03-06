@@ -15,14 +15,14 @@ class Settings(BaseSettings):
     redirect_uri: str = "http://localhost:8007/auth/google/callback"
     frontend_redirect_uri: str = "englishapp://auth"  # Flutter deep link; token in fragment
     # AI provider priority: "gpt" — сначала OpenAI, при недоступности Gemini; "gemini" — наоборот
-    ai_priority: str = "gemini"
+    ai_priority: str = "gpt"
     # OpenAI (GPT)
     openai_api_key: str = ""
-    openai_models: str = "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo"  # Список моделей для переключения при ошибках
+    openai_models: str = ""  # Список моделей для переключения при ошибках. Берется из .env
     # Gemini
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
-    gemini_models: str = "gemini-3-pro-preview,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.5-pro,gemini-2.0-flash"  # Список моделей через запятую для автоматического переключения
+    gemini_model: str = ""
+    gemini_models: str = ""  # Список моделей через запятую для автоматического переключения. Берется из .env
     # Logging
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     log_sql: bool = False  # Логировать SQL запросы

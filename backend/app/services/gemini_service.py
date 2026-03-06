@@ -16,18 +16,10 @@ logger = logging.getLogger(__name__)
 
 def _get_gemini_models() -> list[str]:
     """Получить список моделей из настроек."""
-    models_str = settings.gemini_models or "gemini-3-pro-preview,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.5-pro,gemini-2.0-flash"
+    models_str = settings.gemini_models or ""
     models = [m.strip() for m in models_str.split(",") if m.strip()]
     if not models:
-        # Fallback на дефолтный список, если что-то пошло не так
-        models = [
-            "gemini-3-pro-preview",
-            "gemini-3-flash-preview",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
-            "gemini-2.0-flash",
-        ]
+        raise ValueError("GEMINI_MODELS не заданы в .env")
     return models
 
 
@@ -40,14 +32,15 @@ def _get_current_model_index() -> int:
     global _current_model_index
     if _current_model_index is None:
         models = _get_gemini_models()
-        # Пытаемся найти модель из настроек в списке
-        default_model = settings.gemini_model or "gemini-2.5-flash"
+        default_model = settings.gemini_model or ""
         try:
-            _current_model_index = models.index(default_model)
+            if default_model:
+                _current_model_index = models.index(default_model)
+            else:
+                _current_model_index = 0
         except ValueError:
-            # Модель не найдена в списке, начинаем с первой
             _current_model_index = 0
-            logger.warning(f"Модель {default_model} не найдена в списке, используем {models[0]}")
+            logger.warning(f"Модель {default_model} не найдена в списке GEMINI_MODELS, используем {models[0]}")
     return _current_model_index
 
 

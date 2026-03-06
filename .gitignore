@@ -12,3 +12,13 @@ backend/.eggs/
 .DS_Store
 *.swp
 *.swo
+
+# Desktop / Nuxt / Tauri
+desktop/node_modules/
+desktop/.nuxt/
+desktop/.output/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/npm-debug.log*
+desktop/yarn-debug.log*
+desktop/yarn-error.log*

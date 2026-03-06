@@ -20,9 +20,11 @@ def _get_client() -> OpenAI | None:
 
 
 def _get_openai_models() -> list[str]:
-    models_str = getattr(settings, "openai_models", None) or "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo"
+    models_str = getattr(settings, "openai_models", None) or ""
     models = [m.strip() for m in models_str.split(",") if m.strip()]
-    return models or ["gpt-4o", "gpt-4o-mini"]
+    if not models:
+        raise ValueError("OPENAI_MODELS не заданы в .env")
+    return models
 
 
 def _get_current_openai_index() -> int:
