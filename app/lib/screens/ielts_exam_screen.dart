@@ -86,24 +86,33 @@ class _IeltsExamScreenState extends State<IeltsExamScreen> {
   }
 
   void _playerListener() {
-    if (_playerController?.value.playerState == PlayerState.ended && _phase == 'playing') {
-      setState(() {
-        _phase = 'post_checking';
-        _secondsRemaining = 30; // 30 seconds to check answers
-        _timer?.cancel();
-        _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          if (!mounted) return;
-          setState(() {
-            if (_secondsRemaining > 0) {
-              _secondsRemaining--;
-            } else {
-              timer.cancel();
-              _advanceToNextPart();
-            }
-          });
+    if (_playerController == null) return;
+    
+    // Sometimes the player ends but the state floats around 'paused' at the very end.
+    // We check if it's ended.
+    if (_playerController!.value.playerState == PlayerState.ended && _phase == 'playing') {
+      _finishPlayingAndCheckAnswers();
+    }
+  }
+
+  void _finishPlayingAndCheckAnswers() {
+    if (_phase != 'playing') return;
+    setState(() {
+      _phase = 'post_checking';
+      _secondsRemaining = 30; // 30 seconds to check answers
+      _timer?.cancel();
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return;
+        setState(() {
+          if (_secondsRemaining > 0) {
+            _secondsRemaining--;
+          } else {
+            timer.cancel();
+            _advanceToNextPart();
+          }
         });
       });
-    }
+    });
   }
 
   void _advanceToNextPart() {
@@ -276,12 +285,22 @@ class _IeltsExamScreenState extends State<IeltsExamScreen> {
                   'Part ${_currentPartIndex + 1} of 4',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                 ),
-                if (_phase == 'pre_reading')
+                if (_phase == 'pre_reading') ...[
                   Text('Чтение вопросов: $_secondsRemaining сек', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-                if (_phase == 'playing')
+                  TextButton(onPressed: _startPlaying, child: const Text('Слушать'))
+                ],
+                if (_phase == 'playing') ...[
                   const Text('Аудио воспроизводится...', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                if (_phase == 'post_checking')
+                  IconButton(
+                    icon: const Icon(Icons.skip_next), 
+                    onPressed: _finishPlayingAndCheckAnswers, 
+                    tooltip: 'Пропустить аудио',
+                  ),
+                ],
+                if (_phase == 'post_checking') ...[
                   Text('Проверка ответов: $_secondsRemaining сек', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                  TextButton(onPressed: _advanceToNextPart, child: const Text('Далее'))
+                ],
               ],
             ),
           ),
@@ -291,6 +310,7 @@ class _IeltsExamScreenState extends State<IeltsExamScreen> {
             SizedBox(
               height: 1, // practically hidden
               child: YoutubePlayer(
+                key: ValueKey(_currentPartIndex),
                 controller: _playerController!,
                 showVideoProgressIndicator: false,
               ),

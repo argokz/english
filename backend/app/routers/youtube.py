@@ -237,65 +237,6 @@ async def ask_question_about_video(
 
 @router.post("/exam/generate-part", response_model=IeltsExamPartResponse)
 async def generate_exam_part(
-    background_tasks: BackgroundTasks,
-    part_num: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    try:
-        if part_num < 1 or part_num > 4:
-            raise ValueError("Part number must be between 1 and 4")
-        
-        query = f"ielts listening practice test part {part_num} short"
-        
-        logger.info(f"Generating Exam Part {part_num}...")
-        # 1. Search for video
-        search_results = await youtube_service.search_youtube_videos(query, limit=5)
-        if not search_results:
-            raise ValueError(f"No videos found for Part {part_num}")
-        
-        # Use the first valid result
-        selected_video = search_results[0]
-        video_id = selected_video["video_id"]
-        url = selected_video["url"]
-        
-        # 2. Download audio
-        audio_path = await youtube_service.download_youtube_audio(url)
-        background_tasks.add_task(cleanup_file, audio_path)
-        
-        # 3. Transcribe audio
-        transcription_result = await transcription_service.transcribe_audio_file(audio_path, language="en")
-        segments = transcription_result.get("segments", [])
-        transcript = " ".join([segment.get("text", "") for segment in segments])
-        
-        # 4. Generate 10 questions via LLM
-        questions_payload = gemini_service.generate_ielts_exam_part(transcript, part_num)
-        raw_questions = questions_payload.get("questions", [])
-        
-        validated_questions = []
-        for q in raw_questions:
-            validated_questions.append(IeltsExamQuestion(
-                type=q.get("type", "completion"),
-                question=q.get("question", ""),
-                options=q.get("options", []),
-                answer=q.get("answer", ""),
-                explanation=q.get("explanation", "")
-            ))
-        
-        return IeltsExamPartResponse(
-            part_number=part_num,
-            video_id=video_id,
-            url=url,
-            transcription=transcript,
-            questions=validated_questions
-        )
-
-    except Exception as e:
-        logger.exception(f"Failed to generate IELTS Exam Part {part_num}")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
-
-@router.post("/exam/generate-part", response_model=IeltsExamPartResponse)
-async def generate_exam_part(
     part_num: int,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
@@ -305,14 +246,30 @@ async def generate_exam_part(
     bank_part = await youtube_repo.get_random_exam_part(db, part_num)
     if bank_part:
         logger.info(f"Returning random Exam Part {part_num} from bank: {bank_part.id}")
+        
+        validated_questions = []
+        for q in bank_part.questions:
+            def _to_str(val):
+                if isinstance(val, list):
+                    return ", ".join(str(x) for x in val)
+                if val is None:
+                    return ""
+                return str(val)
+                
+            validated_questions.append(IeltsExamQuestion(
+                type=_to_str(q.get("type", "completion")),
+                question=_to_str(q.get("question", "")),
+                options=q.get("options", []) if isinstance(q.get("options"), list) else [],
+                answer=_to_str(q.get("answer", "")),
+                explanation=_to_str(q.get("explanation", ""))
+            ))
+            
         return IeltsExamPartResponse(
             part_number=part_num,
             video_id=bank_part.video.video_id,
             url=bank_part.video.url,
             transcription=bank_part.video.transcription,
-            questions=[
-                IeltsExamQuestion(**q) for q in bank_part.questions
-            ]
+            questions=validated_questions
         )
 
     # Fallback to generation if bank is empty
